@@ -24,7 +24,7 @@ const client = new Client({
 });
 
 // Quand le bot démarre
-client.once("clientReady", () => {
+client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
@@ -79,7 +79,7 @@ async function checkMarkets() {
                 }
 
                 // Opportunité intéressante : +3%
-                if (change >= 3) {
+                if (change >= 0.2) {
 
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
@@ -102,16 +102,16 @@ async function checkMarkets() {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                if (perf >= 0.1) {
+                if (perf >= 0.2) {
                     await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+0.1%** ! Tu peux prendre tes profits.`
+                        `🎉 **${symbol}** a dépassé **+0.2%** ! Tu peux prendre tes profits.`
                     );
                     delete positions[symbol];
                 }
 
-                if (perf <= -0.1) {
+                if (perf <= -0.2) {
                     await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-0.1%** ! Tu devrais envisager de couper ta position.`
+                        `⚠️ **${symbol}** est tombé sous **-0.2%** ! Tu devrais envisager de couper ta position.`
                     );
                     delete positions[symbol];
                 }
