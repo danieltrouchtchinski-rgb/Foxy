@@ -12,7 +12,7 @@ const yahooFinance = new YahooFinance();
 const ADMIN_ID = "1238123426959462432"; 
 const lastPrices = {};
 const lastAlertTime = {};
-const positions = {}; // <-- stocke les actions sur lesquelles tu as "misé"
+const positions = {}; 
 
 const client = new Client({
     intents: [
@@ -23,15 +23,20 @@ const client = new Client({
     ]
 });
 
-// Quand le bot démarre
+// ----------------------
+// BOT READY
+// ----------------------
 client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("Le bot fonctionne et a été mise a jour !");
+        user.send("Le bot fonctionne et a été mis à jour !");
     });
 });
 
+// ----------------------
+// SYMBOLS À SURVEILLER
+// ----------------------
 const symbols = [
     "AAPL", "TSLA", "NVDA", "AMZN", "META",
     "MSFT", "BTC-USD", "ETH-USD",
@@ -42,8 +47,9 @@ const symbols = [
     "ADBE", "CRM", "ORCL", "BA", "F"
 ];
 
-
-// Quand tu cliques sur "Miser"
+// ----------------------
+// BOUTON "MISER"
+// ----------------------
 client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
 
@@ -62,21 +68,34 @@ client.on("interactionCreate", async interaction => {
     }
 });
 
+// ----------------------
+// CHECK MARKETS
+// ----------------------
 async function checkMarkets() {
     try {
         const adminUser = await client.users.fetch(ADMIN_ID);
 
-        for (const symbol of symbols) {
-            const data = await yahooFinance.quote(symbol);
-            const price = data.regularMarketPrice;
+        console.log("Boucle OK :", new Date().toLocaleTimeString());
 
+        for (const symbol of symbols) {
+            let data;
+
+            try {
+                data = await yahooFinance.quote(symbol);
+            } catch (err) {
+                console.log("Erreur Yahoo pour", symbol);
+                continue;
+            }
+
+            const price = data?.regularMarketPrice;
             if (!price) continue;
 
-            // --- 1) Détection des opportunités ---
+            // ----------------------
+            // 1) OPPORTUNITÉ +0.1%
+            // ----------------------
             if (lastPrices[symbol]) {
                 const oldPrice = lastPrices[symbol];
                 const change = ((price - oldPrice) / oldPrice) * 100;
-
                 const now = Date.now();
 
                 // Cooldown 10 minutes
@@ -84,9 +103,8 @@ async function checkMarkets() {
                     continue;
                 }
 
-                // Opportunité intéressante : +3%
+                // Opportunité
                 if (change >= 0.1) {
-
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId(`miser_${symbol}_${price}`)
@@ -95,29 +113,50 @@ async function checkMarkets() {
                     );
 
                     await adminUser.send({
-                        content: `💡 Tu devrais miser sur **${symbol}** ! Les prix ont augmenté de **${change.toFixed(2)}%** (prix actuel : ${price}).`,
+                        content: `💡 **${symbol}** a pris **+${change.toFixed(2)}%** en 1 minute ! (prix : ${price})`,
                         components: [row]
                     });
 
                     lastAlertTime[symbol] = now;
                 }
+
+                // ----------------------
+                // 2) CHUTE BRUTALE -3%
+                // ----------------------
+                if (change <= -3) {
+                    await adminUser.send(
+                        `🚨 **${symbol}** a chuté de **${change.toFixed(2)}%** en 1 minute !`
+                    );
+                }
             }
 
-            // --- 2) Surveillance des positions ---
+            // ----------------------
+            // 3) SURVEILLANCE DES POSITIONS
+            // ----------------------
             if (positions[symbol]) {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
+                // Take profit +0.1%
                 if (perf >= 0.1) {
                     await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+0.1%** ! Tu peux prendre tes profits.`
+                        `🎉 **${symbol}** est à **+${perf.toFixed(2)}%** ! Prends tes profits.`
                     );
                     delete positions[symbol];
                 }
 
+                // Stop-loss -0.1%
                 if (perf <= -0.1) {
                     await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-0.1%** ! Tu devrais envisager de couper ta position.`
+                        `⚠️ **${symbol}** est à **${perf.toFixed(2)}%** ! Stop-loss conseillé.`
+                    );
+                    delete positions[symbol];
+                }
+
+                // Stop-loss sécurité -3%
+                if (perf <= -3) {
+                    await adminUser.send(
+                        `🛑 STOP-LOSS AUTOMATIQUE : **${symbol}** est tombé sous **-3%** !`
                     );
                     delete positions[symbol];
                 }
