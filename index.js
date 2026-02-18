@@ -34,8 +34,14 @@ client.once("ready", () => {
 
 const symbols = [
     "AAPL", "TSLA", "NVDA", "AMZN", "META",
-    "MSFT", "BTC-USD", "ETH-USD"
+    "MSFT", "BTC-USD", "ETH-USD",
+
+    "GOOGL", "BRK-B", "JPM", "V", "MA",
+    "KO", "PEP", "XOM", "CVX", "AMD",
+    "INTC", "NFLX", "DIS", "UBER", "PYPL",
+    "ADBE", "CRM", "ORCL", "BA", "F"
 ];
+
 
 // Quand tu cliques sur "Miser"
 client.on("interactionCreate", async interaction => {
@@ -79,7 +85,7 @@ async function checkMarkets() {
                 }
 
                 // Opportunité intéressante : +3%
-                if (change >= 0.2) {
+                if (change >= 0.1) {
 
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
@@ -102,16 +108,16 @@ async function checkMarkets() {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                if (perf >= 0.2) {
+                if (perf >= 0.1) {
                     await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+0.2%** ! Tu peux prendre tes profits.`
+                        `🎉 **${symbol}** a dépassé **+0.1%** ! Tu peux prendre tes profits.`
                     );
                     delete positions[symbol];
                 }
 
-                if (perf <= -0.2) {
+                if (perf <= -0.1) {
                     await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-0.2%** ! Tu devrais envisager de couper ta position.`
+                        `⚠️ **${symbol}** est tombé sous **-0.1%** ! Tu devrais envisager de couper ta position.`
                     );
                     delete positions[symbol];
                 }
