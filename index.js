@@ -102,16 +102,16 @@ async function checkMarkets() {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                if (perf >= 3) {
+                if (perf >= 1) {
                     await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+3%** ! Tu peux prendre tes profits.`
+                        `🎉 **${symbol}** a dépassé **+1%** ! Tu peux prendre tes profits.`
                     );
                     delete positions[symbol];
                 }
 
-                if (perf <= -3) {
+                if (perf <= -1) {
                     await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-3%** ! Tu devrais envisager de couper ta position.`
+                        `⚠️ **${symbol}** est tombé sous **-1%** ! Tu devrais envisager de couper ta position.`
                     );
                     delete positions[symbol];
                 }
