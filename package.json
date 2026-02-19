@@ -12,6 +12,16 @@
   "type": "commonjs",
   "dependencies": {
     "discord.js": "^14.25.1",
+    "dotenv": "^17.3.1",
+    "finnhub": "^2.0.13",
     "yahoo-finance2": "^3.13.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danieltrouchtchinski-rgb/Foxy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/danieltrouchtchinski-rgb/Foxy/issues"
+  },
+  "homepage": "https://github.com/danieltrouchtchinski-rgb/Foxy#readme"
 }
