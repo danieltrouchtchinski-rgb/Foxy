@@ -12,10 +12,10 @@ const {
 const finnhub = require("finnhub");
 
 // ----------------------
-// FINNHUB CLIENT (VERSION CORRECTE)
+// FINNHUB CLIENT (VERSION 2026)
 // ----------------------
+const FINNHUB_KEY = process.env.FINNHUB_KEY;
 const finnhubClient = new finnhub.DefaultApi();
-finnhubClient.apiClient.authentications["api_key"].apiKey = process.env.FINNHUB_KEY;
 
 // ----------------------
 // CONFIG
@@ -82,7 +82,7 @@ client.once("ready", () => {
 });
 
 // ----------------------
-// BOUTONS : ACHETER / VENDRE / IGNORER
+// BOUTONS
 // ----------------------
 client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
@@ -90,26 +90,14 @@ client.on("interactionCreate", async interaction => {
     const [action, symbol, entry] = interaction.customId.split("_");
     const name = symbolNames[symbol] || symbol;
 
-    // ACHETER
     if (action === "acheter") {
-        positions[symbol] = {
-            entry: parseFloat(entry),
-            time: Date.now()
-        };
-
-        return interaction.reply({
-            content: `🟢 Position ouverte sur **${name}**`,
-            ephemeral: true
-        });
+        positions[symbol] = { entry: parseFloat(entry), time: Date.now() };
+        return interaction.reply({ content: `🟢 Position ouverte sur **${name}**`, ephemeral: true });
     }
 
-    // VENDRE
     if (action === "vendre") {
         if (!positions[symbol]) {
-            return interaction.reply({
-                content: `❌ Aucune position ouverte sur **${name}**`,
-                ephemeral: true
-            });
+            return interaction.reply({ content: `❌ Aucune position ouverte sur **${name}**`, ephemeral: true });
         }
 
         const entryPrice = positions[symbol].entry;
@@ -124,12 +112,8 @@ client.on("interactionCreate", async interaction => {
         });
     }
 
-    // IGNORER
     if (action === "ignore") {
-        return interaction.reply({
-            content: `👌 Alerte ignorée pour **${name}**`,
-            ephemeral: true
-        });
+        return interaction.reply({ content: `👌 Alerte ignorée pour **${name}**`, ephemeral: true });
     }
 });
 
@@ -147,7 +131,7 @@ async function checkMarkets() {
 
             try {
                 data = await new Promise((resolve, reject) => {
-                    finnhubClient.quote(symbol, (error, result) => {
+                    finnhubClient.quote(symbol, FINNHUB_KEY, (error, result) => {
                         if (error) reject(error);
                         else resolve(result);
                     });
@@ -170,27 +154,14 @@ async function checkMarkets() {
                 const change = ((price - oldPrice) / oldPrice) * 100;
                 const now = Date.now();
 
-                // ----------------------
-                // 1) ALERTE IMPORTANTE +1% (AVEC BOUTONS)
-                // ----------------------
+                // 1% — ALERTE AVEC BOUTONS
                 if (change >= 1) {
                     if (!lastAlertTime[symbol] || now - lastAlertTime[symbol] > 10 * 60 * 1000) {
 
                         const row = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder()
-                                .setCustomId(`acheter_${symbol}_${price}`)
-                                .setLabel("Acheter")
-                                .setStyle(ButtonStyle.Success),
-
-                            new ButtonBuilder()
-                                .setCustomId(`vendre_${symbol}_${price}`)
-                                .setLabel("Vendre")
-                                .setStyle(ButtonStyle.Danger),
-
-                            new ButtonBuilder()
-                                .setCustomId(`ignore_${symbol}_${price}`)
-                                .setLabel("Ignorer")
-                                .setStyle(ButtonStyle.Secondary)
+                            new ButtonBuilder().setCustomId(`acheter_${symbol}_${price}`).setLabel("Acheter").setStyle(ButtonStyle.Success),
+                            new ButtonBuilder().setCustomId(`vendre_${symbol}_${price}`).setLabel("Vendre").setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder().setCustomId(`ignore_${symbol}_${price}`).setLabel("Ignorer").setStyle(ButtonStyle.Secondary)
                         );
 
                         await adminUser.send({
@@ -202,23 +173,19 @@ async function checkMarkets() {
                     }
                 }
 
-                // ----------------------
-                // 2) ALERTE FAIBLE +0.1% (SANS BOUTONS)
-                // ----------------------
+                // 0.1% — ALERTE SANS BOUTONS
                 else if (change >= 0.1) {
                     await adminUser.send(`ℹ️ **${name}** a pris **+${change.toFixed(2)}%**`);
                 }
 
-                // ----------------------
-                // 3) CHUTE BRUTALE -3%
-                // ----------------------
+                // -3% — CHUTE BRUTALE
                 if (change <= -3) {
                     await adminUser.send(`🚨 **${name}** a chuté de **${change.toFixed(2)}%** !`);
                 }
             }
 
             // ----------------------
-            // SURVEILLANCE DES POSITIONS
+            // POSITIONS
             // ----------------------
             if (positions[symbol]) {
                 const entry = positions[symbol].entry;
