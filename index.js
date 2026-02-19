@@ -21,7 +21,7 @@ const lastPrices = {};
 const lastAlertTime = {};
 const positions = {};
 const tradeHistory = [];
-const priceHistory = {}; // Historique pour analyse
+const priceHistory = {}; // Pour analyse 1min / 5min / 15min
 
 // ----------------------
 // DICTIONNAIRE DES NOMS
@@ -73,34 +73,12 @@ const client = new Client({
 // ----------------------
 // READY MESSAGE
 // ----------------------
-client.once("clientReady", () => {
+client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
     client.users.fetch(ADMIN_ID).then(user => {
         user.send("✅ Le bot vient de redémarrer et est maintenant en ligne.");
     });
 });
-
-// ----------------------
-// CHARGEMENT HISTORIQUE AU DÉMARRAGE
-// ----------------------
-(async () => {
-    console.log("📥 Chargement de l'historique Yahoo Finance...");
-
-    for (const symbol of symbols) {
-        try {
-            const hist = await yahooFinance.chart(symbol, { interval: "1m", range: "30m" });
-            const prices = hist.quotes.map(q => q.close).filter(Boolean);
-
-            priceHistory[symbol] = prices;
-
-            console.log(`✔ ${symbol} : ${prices.length} points chargés`);
-        } catch (e) {
-            console.log(`❌ Erreur historique ${symbol}:`, e);
-        }
-    }
-
-    console.log("📊 Historique chargé. Le bot est prêt.");
-})();
 
 // ----------------------
 // BOUTONS
@@ -203,7 +181,7 @@ client.on("messageCreate", async message => {
 });
 
 // ----------------------
-// BOUCLE PRINCIPALE (1 MINUTE)
+// BOUCLE PRINCIPALE
 // ----------------------
 setInterval(async () => {
     for (const symbol of symbols) {
@@ -218,57 +196,6 @@ setInterval(async () => {
                 priceHistory[symbol].shift();
             }
 
-            // ----------------------
-            // ALERTES 1% AVEC BOUTONS
-            // ----------------------
-            if (!lastPrices[symbol]) {
-                lastPrices[symbol] = price;
-                continue;
-            }
-
-            const oldPrice = lastPrices[symbol];
-            const variation = ((price - oldPrice) / oldPrice) * 100;
-
-            if (Math.abs(variation) >= 1) {
-
-                const now = Date.now();
-                if (!lastAlertTime[symbol] || now - lastAlertTime[symbol] > 5 * 60 * 1000) {
-
-                    lastAlertTime[symbol] = now;
-
-                    const name = symbolNames[symbol];
-
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`acheter_${symbol}_${price}`)
-                            .setLabel("Acheter")
-                            .setStyle(ButtonStyle.Success),
-
-                        new ButtonBuilder()
-                            .setCustomId(`vendre_${symbol}_${price}`)
-                            .setLabel("Vendre")
-                            .setStyle(ButtonStyle.Danger),
-
-                        new ButtonBuilder()
-                            .setCustomId(`ignore_${symbol}_${price}`)
-                            .setLabel("Ignorer")
-                            .setStyle(ButtonStyle.Secondary)
-                    );
-
-                    client.users.fetch(ADMIN_ID).then(user => {
-                        user.send({
-                            content:
-                                `🚨 **Alerte ${name} (${symbol})**\n` +
-                                `Variation : ${variation.toFixed(2)}%\n` +
-                                `Prix actuel : ${price}$`,
-                            components: [row]
-                        });
-                    });
-                }
-            }
-
-            lastPrices[symbol] = price;
-
         } catch (e) {
             console.log("Erreur Yahoo:", e);
         }
@@ -279,3 +206,4 @@ setInterval(async () => {
 // LOGIN
 // ----------------------
 client.login(process.env.TOKEN);
+
