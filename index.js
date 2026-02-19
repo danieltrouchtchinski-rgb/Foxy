@@ -21,7 +21,7 @@ const lastPrices = {};
 const lastAlertTime = {};
 const positions = {};
 const tradeHistory = [];
-const priceHistory = {}; // Pour analyse 1min / 5min / 15min
+const priceHistory = {}; // Historique pour analyse
 
 // ----------------------
 // DICTIONNAIRE DES NOMS
@@ -79,6 +79,28 @@ client.once("clientReady", () => {
         user.send("✅ Le bot vient de redémarrer et est maintenant en ligne.");
     });
 });
+
+// ----------------------
+// CHARGEMENT HISTORIQUE AU DÉMARRAGE
+// ----------------------
+(async () => {
+    console.log("📥 Chargement de l'historique Yahoo Finance...");
+
+    for (const symbol of symbols) {
+        try {
+            const hist = await yahooFinance.chart(symbol, { interval: "1m", range: "30m" });
+            const prices = hist.quotes.map(q => q.close).filter(Boolean);
+
+            priceHistory[symbol] = prices;
+
+            console.log(`✔ ${symbol} : ${prices.length} points chargés`);
+        } catch (e) {
+            console.log(`❌ Erreur historique ${symbol}:`, e);
+        }
+    }
+
+    console.log("📊 Historique chargé. Le bot est prêt.");
+})();
 
 // ----------------------
 // BOUTONS
@@ -181,7 +203,7 @@ client.on("messageCreate", async message => {
 });
 
 // ----------------------
-// BOUCLE PRINCIPALE
+// BOUCLE PRINCIPALE (1 MINUTE)
 // ----------------------
 setInterval(async () => {
     for (const symbol of symbols) {
@@ -206,5 +228,4 @@ setInterval(async () => {
 // LOGIN
 // ----------------------
 client.login(process.env.TOKEN);
-
 
