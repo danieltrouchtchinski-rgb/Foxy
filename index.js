@@ -1,3 +1,6 @@
+// ----------------------
+// IMPORTS
+// ----------------------
 const { 
     Client, 
     GatewayIntentBits,
@@ -9,12 +12,14 @@ const {
 const finnhub = require("finnhub");
 
 // ----------------------
-// FINNHUB CLIENT
+// FINNHUB CLIENT (VERSION CORRECTE)
 // ----------------------
-const api_key = finnhub.ApiClient.instance.authentications["api_key"];
-api_key.apiKey = process.env.FINNHUB_KEY;
 const finnhubClient = new finnhub.DefaultApi();
+finnhubClient.apiClient.authentications["api_key"].apiKey = process.env.FINNHUB_KEY;
 
+// ----------------------
+// CONFIG
+// ----------------------
 const ADMIN_ID = "1238123426959462432"; 
 const lastPrices = {};
 const lastAlertTime = {};
@@ -127,10 +132,6 @@ client.on("interactionCreate", async interaction => {
         });
     }
 });
-const finnhub = require("finnhub");
-
-const finnhubClient = new finnhub.DefaultApi();
-finnhubClient.apiClient.authentications["api_key"].apiKey = process.env.FINNHUB_KEY;
 
 // ----------------------
 // CHECK MARKETS
@@ -170,7 +171,7 @@ async function checkMarkets() {
                 const now = Date.now();
 
                 // ----------------------
-                // 1) ALERTE IMPORTANTE +1%
+                // 1) ALERTE IMPORTANTE +1% (AVEC BOUTONS)
                 // ----------------------
                 if (change >= 1) {
                     if (!lastAlertTime[symbol] || now - lastAlertTime[symbol] > 10 * 60 * 1000) {
@@ -193,7 +194,7 @@ async function checkMarkets() {
                         );
 
                         await adminUser.send({
-                            content: `💡 **${name}** a pris **+${change.toFixed(2)}%** en 1 minute !`,
+                            content: `💡 **${name}** a pris **+${change.toFixed(2)}%** !`,
                             components: [row]
                         });
 
@@ -202,17 +203,17 @@ async function checkMarkets() {
                 }
 
                 // ----------------------
-                // 2) ALERTE FAIBLE +0.1% (SILENCIEUSE)
+                // 2) ALERTE FAIBLE +0.1% (SANS BOUTONS)
                 // ----------------------
                 else if (change >= 0.1) {
-                    await adminUser.send(`ℹ️ **${name}** a pris **+${change.toFixed(2)}%** en 1 minute`);
+                    await adminUser.send(`ℹ️ **${name}** a pris **+${change.toFixed(2)}%**`);
                 }
 
                 // ----------------------
                 // 3) CHUTE BRUTALE -3%
                 // ----------------------
                 if (change <= -3) {
-                    await adminUser.send(`🚨 **${name}** a chuté de **${change.toFixed(2)}%** en 1 minute !`);
+                    await adminUser.send(`🚨 **${name}** a chuté de **${change.toFixed(2)}%** !`);
                 }
             }
 
