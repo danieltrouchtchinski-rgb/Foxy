@@ -1,6 +1,3 @@
-// ----------------------
-// IMPORTS
-// ----------------------
 const { 
     Client, 
     GatewayIntentBits,
@@ -9,20 +6,19 @@ const {
     ButtonStyle 
 } = require("discord.js");
 
-const yahooFinance = require("yahoo-finance2").default;
-require("dotenv").config();
+const finnhub = require("finnhub");
 
 // ----------------------
-// CONFIG
+// FINNHUB CLIENT
 // ----------------------
-const ADMIN_ID = "1238123426959462432";
+const api_key = finnhub.ApiClient.instance.authentications["api_key"];
+api_key.apiKey = process.env.FINNHUB_KEY;
+const finnhubClient = new finnhub.DefaultApi();
 
-const lastPrices = {};          // Pour variation cumulée
-const lastAlertTime1 = {};      // Anti-spam alertes 1%
-const lastAlertTime01 = {};     // Anti-spam alertes 0.1%
-const positions = {};
-const tradeHistory = [];
-const priceHistory = {};        // Historique pour analyse !avis
+const ADMIN_ID = "1238123426959462432"; 
+const lastPrices = {};
+const lastAlertTime = {};
+const positions = {}; 
 
 // ----------------------
 // DICTIONNAIRE DES NOMS
@@ -32,9 +28,18 @@ const symbolNames = {
     "TSLA": "Tesla",
     "NVDA": "Nvidia",
     "AMZN": "Amazon",
-    "META": "Meta",
+    "META": "Meta Platforms",
     "MSFT": "Microsoft",
-    "GOOGL": "Alphabet",
+
+    "GOOGL": "Alphabet (Google)",
+    "BRK-B": "Berkshire Hathaway",
+    "JPM": "JPMorgan Chase",
+    "V": "Visa",
+    "MA": "Mastercard",
+    "KO": "Coca-Cola",
+    "PEP": "PepsiCo",
+    "XOM": "Exxon Mobil",
+    "CVX": "Chevron",
     "AMD": "AMD",
     "INTC": "Intel",
     "NFLX": "Netflix",
@@ -48,16 +53,10 @@ const symbolNames = {
     "F": "Ford"
 };
 
+// ----------------------
+// SYMBOLS À SURVEILLER
+// ----------------------
 const symbols = Object.keys(symbolNames);
-
-// Reverse lookup : APPLE → AAPL
-function findSymbolByName(name) {
-    name = name.toLowerCase();
-    for (const [symbol, realName] of Object.entries(symbolNames)) {
-        if (realName.toLowerCase() === name) return symbol;
-    }
-    return null;
-}
 
 // ----------------------
 // CLIENT DISCORD
@@ -72,179 +71,115 @@ const client = new Client({
 });
 
 // ----------------------
-// READY MESSAGE
+// BOT READY
 // ----------------------
-client.once("clientReady", () => {
+client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
+
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✅ Le bot vient de redémarrer et est maintenant en ligne.");
+        user.send("Le bot fonctionne avec Finnhub !");
     });
 });
 
 // ----------------------
-// CHARGEMENT HISTORIQUE AU DÉMARRAGE
-// ----------------------
-(async () => {
-    console.log("📥 Chargement de l'historique Yahoo Finance...");
-
-    for (const symbol of symbols) {
-        try {
-            const hist = await yahooFinance.chart(symbol, { interval: "1m", range: "30m" });
-            const prices = hist.quotes.map(q => q.close).filter(Boolean);
-
-            priceHistory[symbol] = prices;
-
-            console.log(`✔ ${symbol} : ${prices.length} points chargés`);
-        } catch (e) {
-            console.log(`❌ Erreur historique ${symbol}:`, e);
-        }
-    }
-
-    console.log("📊 Historique chargé. Le bot est prêt.");
-})();
-
-// ----------------------
-// BOUTONS (ALERTES 1%)
+// BOUTONS : MISER / VENDRE / IGNORER
 // ----------------------
 client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
 
     const [action, symbol, entry] = interaction.customId.split("_");
-    const name = symbolNames[symbol];
+    const name = symbolNames[symbol] || symbol;
 
-    if (action === "acheter") {
-        positions[symbol] = { entry: parseFloat(entry), time: Date.now() };
-        return interaction.reply({ content: `🟢 Position ouverte sur **${name}**`, ephemeral: true });
+    // MISER
+    if (action === "miser") {
+        positions[symbol] = {
+            entry: parseFloat(entry),
+            time: Date.now()
+        };
+
+        return interaction.reply({
+            content: `🟢 Position ouverte sur **${name}** à **${entry}**`,
+            ephemeral: true
+        });
     }
 
+    // VENDRE
     if (action === "vendre") {
         if (!positions[symbol]) {
-            return interaction.reply({ content: `❌ Aucune position ouverte sur **${name}**`, ephemeral: true });
+            return interaction.reply({
+                content: `❌ Aucune position ouverte sur **${name}**`,
+                ephemeral: true
+            });
         }
 
         const entryPrice = positions[symbol].entry;
         const currentPrice = parseFloat(entry);
         const perf = ((currentPrice - entryPrice) / entryPrice) * 100;
 
-        tradeHistory.push({
-            symbol,
-            name,
-            entry: entryPrice,
-            exit: currentPrice,
-            perf: parseFloat(perf.toFixed(2)),
-            time: Date.now()
-        });
-
         delete positions[symbol];
 
         return interaction.reply({
-            content: `🔴 Position fermée sur **${name}** (${perf.toFixed(2)}%)`,
+            content: `🔴 Position fermée sur **${name}** à **${currentPrice}** (perf : ${perf.toFixed(2)}%)`,
             ephemeral: true
         });
     }
 
+    // IGNORER
     if (action === "ignore") {
-        return interaction.reply({ content: `👌 Alerte ignorée pour **${name}**`, ephemeral: true });
+        return interaction.reply({
+            content: `👌 Alerte ignorée pour **${name}**`,
+            ephemeral: true
+        });
     }
 });
 
 // ----------------------
-// COMMANDES
+// CHECK MARKETS
 // ----------------------
-client.on("messageCreate", async message => {
-    if (message.author.bot) return;
+async function checkMarkets() {
+    try {
+        const adminUser = await client.users.fetch(ADMIN_ID);
 
-    // HISTORIQUE
-    if (message.content === "!historique") {
-        if (tradeHistory.length === 0) return message.reply("📭 Aucun trade enregistré.");
-        let txt = "📘 **Historique des trades**\n\n";
-        for (const t of tradeHistory.slice(-20).reverse()) {
-            txt += `**${t.name}** : ${t.perf >= 0 ? "🟢" : "🔴"} ${t.perf}%\n`;
-        }
-        return message.reply(txt);
-    }
+        console.log("Boucle OK :", new Date().toLocaleTimeString());
 
-    // AVIS
-    if (message.content.startsWith("!avis")) {
-        const args = message.content.split(" ");
-        if (args.length < 2) return message.reply("❌ Utilisation : `!avis APPLE`");
+        for (const symbol of symbols) {
+            let data;
 
-        const name = args.slice(1).join(" ");
-        const symbol = findSymbolByName(name);
-        if (!symbol) return message.reply("❌ Nom inconnu.");
-
-        const history = priceHistory[symbol] || [];
-        if (history.length < 2) return message.reply("⏳ Pas assez de données.");
-
-        const nameReal = symbolNames[symbol];
-
-        const shortTrend = history.at(-1) - history.at(-2);
-        const trend5 = history.slice(-10).at(-1) - history.slice(-10)[0];
-        const trend15 = history.slice(-30).at(-1) - history.slice(-30)[0];
-
-        const vol = Math.max(...history.slice(-30)) - Math.min(...history.slice(-30));
-
-        const variation = ((history.at(-1) - history.at(-2)) / history.at(-2)) * 100;
-
-        const conclusion =
-            trend15 > 0 ? "Dynamique favorable." :
-            trend15 < 0 ? "Dynamique baissière." :
-            "Tendance stable.";
-
-        return message.reply(
-            `📊 **Analyse de ${nameReal} :**\n\n` +
-            `• 📊 Tendance 1 min : ${shortTrend > 0 ? "📈" : shortTrend < 0 ? "📉" : "➖"}\n` +
-            `• 🕒 Tendance 5 min : ${trend5 > 0 ? "📈" : trend5 < 0 ? "📉" : "➖"}\n` +
-            `• 🕒 Tendance 15 min : ${trend15 > 0 ? "📈" : trend15 < 0 ? "📉" : "➖"}\n` +
-            `• 🎯 Volatilité : ${vol < 0.2 ? "faible" : vol < 0.6 ? "modérée" : "élevée"}\n` +
-            `• 🔄 Variation récente : ${variation.toFixed(2)}%\n\n` +
-            `📝 **Conclusion :** ${conclusion}`
-        );
-    }
-});
-
-// ----------------------
-// BOUCLE PRINCIPALE (1 MINUTE)
-// ----------------------
-setInterval(async () => {
-    for (const symbol of symbols) {
-        try {
-            const quote = await yahooFinance.quote(symbol);
-            const price = quote.regularMarketPrice;
-
-            if (!priceHistory[symbol]) priceHistory[symbol] = [];
-            priceHistory[symbol].push(price);
-
-            if (priceHistory[symbol].length > 200) {
-                priceHistory[symbol].shift();
-            }
-
-            // ----------------------
-            // INITIALISATION
-            // ----------------------
-            if (!lastPrices[symbol]) {
-                lastPrices[symbol] = price;
+            try {
+                data = await new Promise((resolve, reject) => {
+                    finnhubClient.quote(symbol, (error, result) => {
+                        if (error) reject(error);
+                        else resolve(result);
+                    });
+                });
+            } catch (err) {
+                console.log("Erreur Finnhub pour", symbol);
                 continue;
             }
 
-            const oldPrice = lastPrices[symbol];
-            const variation = ((price - oldPrice) / oldPrice) * 100;
-            const name = symbolNames[symbol];
+            const price = data?.c;
+            if (!price) continue;
+
+            const name = symbolNames[symbol] || symbol;
 
             // ----------------------
-            // 🔥 ALERTE 1% (AVEC BOUTONS)
+            // 1) OPPORTUNITÉ +0.1%
             // ----------------------
-            if (Math.abs(variation) >= 1) {
-
+            if (lastPrices[symbol]) {
+                const oldPrice = lastPrices[symbol];
+                const change = ((price - oldPrice) / oldPrice) * 100;
                 const now = Date.now();
-                if (!lastAlertTime1[symbol] || now - lastAlertTime1[symbol] > 5 * 60 * 1000) {
 
-                    lastAlertTime1[symbol] = now;
+                // Cooldown 10 minutes
+                if (lastAlertTime[symbol] && now - lastAlertTime[symbol] < 10 * 60 * 1000) {
+                    continue;
+                }
 
+                if (change >= 0.1) {
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
-                            .setCustomId(`acheter_${symbol}_${price}`)
-                            .setLabel("Acheter")
+                            .setCustomId(`miser_${symbol}_${price}`)
+                            .setLabel("Miser")
                             .setStyle(ButtonStyle.Success),
 
                         new ButtonBuilder()
@@ -258,54 +193,64 @@ setInterval(async () => {
                             .setStyle(ButtonStyle.Secondary)
                     );
 
-                    client.users.fetch(ADMIN_ID).then(user => {
-                        user.send({
-                            content:
-                                `🚨 **Alerte 1% — ${name} (${symbol})**\n` +
-                                `Variation : ${variation.toFixed(2)}%\n` +
-                                `Prix actuel : ${price}$`,
-                            components: [row]
-                        });
+                    await adminUser.send({
+                        content: `💡 **${name}** a pris **+${change.toFixed(2)}%** en 1 minute ! (prix : ${price})`,
+                        components: [row]
                     });
 
-                    lastPrices[symbol] = price;
-                    continue;
+                    lastAlertTime[symbol] = now;
+                }
+
+                // ----------------------
+                // 2) CHUTE BRUTALE -3%
+                // ----------------------
+                if (change <= -3) {
+                    await adminUser.send(
+                        `🚨 **${name}** a chuté de **${change.toFixed(2)}%** en 1 minute !`
+                    );
                 }
             }
 
             // ----------------------
-            // 🔔 ALERTE 0.1% (SANS BOUTONS)
+            // 3) SURVEILLANCE DES POSITIONS
             // ----------------------
-            if (Math.abs(variation) >= 0.1) {
+            if (positions[symbol]) {
+                const entry = positions[symbol].entry;
+                const perf = ((price - entry) / entry) * 100;
 
-                const now = Date.now();
-                if (!lastAlertTime01[symbol] || now - lastAlertTime01[symbol] > 2 * 60 * 1000) {
+                // Take profit +0.1%
+                if (perf >= 0.1) {
+                    await adminUser.send(
+                        `🎉 **${name}** est à **+${perf.toFixed(2)}%** !`
+                    );
+                    delete positions[symbol];
+                }
 
-                    lastAlertTime01[symbol] = now;
+                // Stop-loss -0.1%
+                if (perf <= -0.1) {
+                    await adminUser.send(
+                        `⚠️ **${name}** est à **${perf.toFixed(2)}%** !`
+                    );
+                    delete positions[symbol];
+                }
 
-                    client.users.fetch(ADMIN_ID).then(user => {
-                        user.send(
-                            `🔔 **Alerte 0.1% — ${name} (${symbol})**\n` +
-                            `Variation : ${variation.toFixed(2)}%\n` +
-                            `Prix actuel : ${price}$`
-                        );
-                    });
-
-                    lastPrices[symbol] = price;
-                    continue;
+                // Stop-loss sécurité -3%
+                if (perf <= -3) {
+                    await adminUser.send(
+                        `🛑 STOP-LOSS AUTOMATIQUE : **${name}** est tombé sous **-3%** !`
+                    );
+                    delete positions[symbol];
                 }
             }
 
-            // Mise à jour du point de référence
             lastPrices[symbol] = price;
 
-        } catch (e) {
-            console.log("Erreur Yahoo:", e);
+            await new Promise(res => setTimeout(res, 500));
         }
+    } catch (err) {
+        console.error("Erreur dans checkMarkets:", err);
     }
-}, 60000);
+}
 
-// ----------------------
-// LOGIN
-// ----------------------
+setInterval(checkMarkets, 60_000);
 client.login(process.env.TOKEN);
