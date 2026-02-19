@@ -30,7 +30,6 @@ const symbolNames = {
     "AMZN": "Amazon",
     "META": "Meta Platforms",
     "MSFT": "Microsoft",
-
     "GOOGL": "Alphabet (Google)",
     "BRK-B": "Berkshire Hathaway",
     "JPM": "JPMorgan Chase",
@@ -53,9 +52,6 @@ const symbolNames = {
     "F": "Ford"
 };
 
-// ----------------------
-// SYMBOLS À SURVEILLER
-// ----------------------
 const symbols = Object.keys(symbolNames);
 
 // ----------------------
@@ -75,14 +71,13 @@ const client = new Client({
 // ----------------------
 client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
-
     client.users.fetch(ADMIN_ID).then(user => {
         user.send("Le bot fonctionne avec Finnhub !");
     });
 });
 
 // ----------------------
-// BOUTONS : MISER / VENDRE / IGNORER
+// BOUTONS : ACHETER / VENDRE / IGNORER
 // ----------------------
 client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
@@ -90,15 +85,15 @@ client.on("interactionCreate", async interaction => {
     const [action, symbol, entry] = interaction.customId.split("_");
     const name = symbolNames[symbol] || symbol;
 
-    // MISER
-    if (action === "miser") {
+    // ACHETER
+    if (action === "acheter") {
         positions[symbol] = {
             entry: parseFloat(entry),
             time: Date.now()
         };
 
         return interaction.reply({
-            content: `🟢 Position ouverte sur **${name}** à **${entry}**`,
+            content: `🟢 Position ouverte sur **${name}**`,
             ephemeral: true
         });
     }
@@ -119,7 +114,7 @@ client.on("interactionCreate", async interaction => {
         delete positions[symbol];
 
         return interaction.reply({
-            content: `🔴 Position fermée sur **${name}** à **${currentPrice}** (perf : ${perf.toFixed(2)}%)`,
+            content: `🔴 Position fermée sur **${name}** (perf : ${perf.toFixed(2)}%)`,
             ephemeral: true
         });
     }
@@ -163,82 +158,79 @@ async function checkMarkets() {
             const name = symbolNames[symbol] || symbol;
 
             // ----------------------
-            // 1) OPPORTUNITÉ +0.1%
+            // VARIATION
             // ----------------------
             if (lastPrices[symbol]) {
                 const oldPrice = lastPrices[symbol];
                 const change = ((price - oldPrice) / oldPrice) * 100;
                 const now = Date.now();
 
-                // Cooldown 10 minutes
-                if (lastAlertTime[symbol] && now - lastAlertTime[symbol] < 10 * 60 * 1000) {
-                    continue;
-                }
+                // ----------------------
+                // 1) ALERTE IMPORTANTE +1%
+                // ----------------------
+                if (change >= 1) {
+                    if (!lastAlertTime[symbol] || now - lastAlertTime[symbol] > 10 * 60 * 1000) {
 
-                if (change >= 0.1) {
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`miser_${symbol}_${price}`)
-                            .setLabel("Miser")
-                            .setStyle(ButtonStyle.Success),
+                        const row = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`acheter_${symbol}_${price}`)
+                                .setLabel("Acheter")
+                                .setStyle(ButtonStyle.Success),
 
-                        new ButtonBuilder()
-                            .setCustomId(`vendre_${symbol}_${price}`)
-                            .setLabel("Vendre")
-                            .setStyle(ButtonStyle.Danger),
+                            new ButtonBuilder()
+                                .setCustomId(`vendre_${symbol}_${price}`)
+                                .setLabel("Vendre")
+                                .setStyle(ButtonStyle.Danger),
 
-                        new ButtonBuilder()
-                            .setCustomId(`ignore_${symbol}_${price}`)
-                            .setLabel("Ignorer")
-                            .setStyle(ButtonStyle.Secondary)
-                    );
+                            new ButtonBuilder()
+                                .setCustomId(`ignore_${symbol}_${price}`)
+                                .setLabel("Ignorer")
+                                .setStyle(ButtonStyle.Secondary)
+                        );
 
-                    await adminUser.send({
-                        content: `💡 **${name}** a pris **+${change.toFixed(2)}%** en 1 minute ! (prix : ${price})`,
-                        components: [row]
-                    });
+                        await adminUser.send({
+                            content: `💡 **${name}** a pris **+${change.toFixed(2)}%** en 1 minute !`,
+                            components: [row]
+                        });
 
-                    lastAlertTime[symbol] = now;
+                        lastAlertTime[symbol] = now;
+                    }
                 }
 
                 // ----------------------
-                // 2) CHUTE BRUTALE -3%
+                // 2) ALERTE FAIBLE +0.1% (SILENCIEUSE)
+                // ----------------------
+                else if (change >= 0.1) {
+                    await adminUser.send(`ℹ️ **${name}** a pris **+${change.toFixed(2)}%** en 1 minute`);
+                }
+
+                // ----------------------
+                // 3) CHUTE BRUTALE -3%
                 // ----------------------
                 if (change <= -3) {
-                    await adminUser.send(
-                        `🚨 **${name}** a chuté de **${change.toFixed(2)}%** en 1 minute !`
-                    );
+                    await adminUser.send(`🚨 **${name}** a chuté de **${change.toFixed(2)}%** en 1 minute !`);
                 }
             }
 
             // ----------------------
-            // 3) SURVEILLANCE DES POSITIONS
+            // SURVEILLANCE DES POSITIONS
             // ----------------------
             if (positions[symbol]) {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                // Take profit +0.1%
                 if (perf >= 0.1) {
-                    await adminUser.send(
-                        `🎉 **${name}** est à **+${perf.toFixed(2)}%** !`
-                    );
+                    await adminUser.send(`🎉 **${name}** est à **+${perf.toFixed(2)}%** !`);
                     delete positions[symbol];
                 }
 
-                // Stop-loss -0.1%
                 if (perf <= -0.1) {
-                    await adminUser.send(
-                        `⚠️ **${name}** est à **${perf.toFixed(2)}%** !`
-                    );
+                    await adminUser.send(`⚠️ **${name}** est à **${perf.toFixed(2)}%** !`);
                     delete positions[symbol];
                 }
 
-                // Stop-loss sécurité -3%
                 if (perf <= -3) {
-                    await adminUser.send(
-                        `🛑 STOP-LOSS AUTOMATIQUE : **${name}** est tombé sous **-3%** !`
-                    );
+                    await adminUser.send(`🛑 STOP-LOSS AUTOMATIQUE : **${name}** est tombé sous **-3%** !`);
                     delete positions[symbol];
                 }
             }
