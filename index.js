@@ -1,3 +1,6 @@
+// ----------------------
+// IMPORTS
+// ----------------------
 const { 
     Client, 
     GatewayIntentBits,
@@ -6,14 +9,58 @@ const {
     ButtonStyle 
 } = require("discord.js");
 
-const YahooFinance = require("yahoo-finance2").default;
-const yahooFinance = new YahooFinance();
+const yahooFinance = require("yahoo-finance2").default;
+require("dotenv").config();
 
-const ADMIN_ID = "1238123426959462432"; 
+// ----------------------
+// CONFIG
+// ----------------------
+const ADMIN_ID = "1238123426959462432";
+
 const lastPrices = {};
 const lastAlertTime = {};
-const positions = {}; // <-- stocke les actions sur lesquelles tu as "misé"
+const positions = {};
+const tradeHistory = [];
+const priceHistory = {}; // Pour analyse 1min / 5min / 15min
 
+// ----------------------
+// DICTIONNAIRE DES NOMS
+// ----------------------
+const symbolNames = {
+    "AAPL": "Apple",
+    "TSLA": "Tesla",
+    "NVDA": "Nvidia",
+    "AMZN": "Amazon",
+    "META": "Meta",
+    "MSFT": "Microsoft",
+    "GOOGL": "Alphabet",
+    "AMD": "AMD",
+    "INTC": "Intel",
+    "NFLX": "Netflix",
+    "DIS": "Disney",
+    "UBER": "Uber",
+    "PYPL": "PayPal",
+    "ADBE": "Adobe",
+    "CRM": "Salesforce",
+    "ORCL": "Oracle",
+    "BA": "Boeing",
+    "F": "Ford"
+};
+
+const symbols = Object.keys(symbolNames);
+
+// Reverse lookup : APPLE → AAPL
+function findSymbolByName(name) {
+    name = name.toLowerCase();
+    for (const [symbol, realName] of Object.entries(symbolNames)) {
+        if (realName.toLowerCase() === name) return symbol;
+    }
+    return null;
+}
+
+// ----------------------
+// CLIENT DISCORD
+// ----------------------
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -23,109 +70,141 @@ const client = new Client({
     ]
 });
 
-// Quand le bot démarre
-client.once("clientReady", () => {
+// ----------------------
+// READY MESSAGE
+// ----------------------
+client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
-
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("Le bot fonctionne et a été mise a jour !");
+        user.send("✅ Le bot vient de redémarrer et est maintenant en ligne.");
     });
 });
 
-const symbols = [
-    "AAPL", "TSLA", "NVDA", "AMZN", "META",
-    "MSFT", "BTC-USD", "ETH-USD"
-];
-
-// Quand tu cliques sur "Miser"
+// ----------------------
+// BOUTONS
+// ----------------------
 client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
 
     const [action, symbol, entry] = interaction.customId.split("_");
+    const name = symbolNames[symbol];
 
-    if (action === "miser") {
-        positions[symbol] = {
-            entry: parseFloat(entry),
+    if (action === "acheter") {
+        positions[symbol] = { entry: parseFloat(entry), time: Date.now() };
+        return interaction.reply({ content: `🟢 Position ouverte sur **${name}**`, ephemeral: true });
+    }
+
+    if (action === "vendre") {
+        if (!positions[symbol]) {
+            return interaction.reply({ content: `❌ Aucune position ouverte sur **${name}**`, ephemeral: true });
+        }
+
+        const entryPrice = positions[symbol].entry;
+        const currentPrice = parseFloat(entry);
+        const perf = ((currentPrice - entryPrice) / entryPrice) * 100;
+
+        tradeHistory.push({
+            symbol,
+            name,
+            entry: entryPrice,
+            exit: currentPrice,
+            perf: parseFloat(perf.toFixed(2)),
             time: Date.now()
-        };
+        });
 
-        await interaction.reply({
-            content: `👍 Position enregistrée sur **${symbol}** à **${entry}**`,
+        delete positions[symbol];
+
+        return interaction.reply({
+            content: `🔴 Position fermée sur **${name}** (${perf.toFixed(2)}%)`,
             ephemeral: true
         });
     }
+
+    if (action === "ignore") {
+        return interaction.reply({ content: `👌 Alerte ignorée pour **${name}**`, ephemeral: true });
+    }
 });
 
-async function checkMarkets() {
-    try {
-        const adminUser = await client.users.fetch(ADMIN_ID);
+// ----------------------
+// COMMANDES
+// ----------------------
+client.on("messageCreate", async message => {
+    if (message.author.bot) return;
 
-        for (const symbol of symbols) {
-            const data = await yahooFinance.quote(symbol);
-            const price = data.regularMarketPrice;
-
-            if (!price) continue;
-
-            // --- 1) Détection des opportunités ---
-            if (lastPrices[symbol]) {
-                const oldPrice = lastPrices[symbol];
-                const change = ((price - oldPrice) / oldPrice) * 100;
-
-                const now = Date.now();
-
-                // Cooldown 10 minutes
-                if (lastAlertTime[symbol] && now - lastAlertTime[symbol] < 10 * 60 * 1000) {
-                    continue;
-                }
-
-                // Opportunité intéressante : +3%
-                if (change >= 3) {
-
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`miser_${symbol}_${price}`)
-                            .setLabel("Miser")
-                            .setStyle(ButtonStyle.Success)
-                    );
-
-                    await adminUser.send({
-                        content: `💡 Tu devrais miser sur **${symbol}** ! Les prix ont augmenté de **${change.toFixed(2)}%** (prix actuel : ${price}).`,
-                        components: [row]
-                    });
-
-                    lastAlertTime[symbol] = now;
-                }
-            }
-
-            // --- 2) Surveillance des positions ---
-            if (positions[symbol]) {
-                const entry = positions[symbol].entry;
-                const perf = ((price - entry) / entry) * 100;
-
-                if (perf >= 3) {
-                    await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+3%** ! Tu peux prendre tes profits.`
-                    );
-                    delete positions[symbol];
-                }
-
-                if (perf <= -3) {
-                    await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-3%** ! Tu devrais envisager de couper ta position.`
-                    );
-                    delete positions[symbol];
-                }
-            }
-
-            lastPrices[symbol] = price;
-
-            await new Promise(res => setTimeout(res, 500));
+    // HISTORIQUE
+    if (message.content === "!historique") {
+        if (tradeHistory.length === 0) return message.reply("📭 Aucun trade enregistré.");
+        let txt = "📘 **Historique des trades**\n\n";
+        for (const t of tradeHistory.slice(-20).reverse()) {
+            txt += `**${t.name}** : ${t.perf >= 0 ? "🟢" : "🔴"} ${t.perf}%\n`;
         }
-    } catch (err) {
-        console.error("Erreur dans checkMarkets:", err);
+        return message.reply(txt);
     }
-}
 
-setInterval(checkMarkets, 60_000);
+    // AVIS
+    if (message.content.startsWith("!avis")) {
+        const args = message.content.split(" ");
+        if (args.length < 2) return message.reply("❌ Utilisation : `!avis APPLE`");
+
+        const name = args.slice(1).join(" ");
+        const symbol = findSymbolByName(name);
+        if (!symbol) return message.reply("❌ Nom inconnu.");
+
+        const history = priceHistory[symbol] || [];
+        if (history.length < 2) return message.reply("⏳ Pas assez de données.");
+
+        const nameReal = symbolNames[symbol];
+
+        const shortTrend = history.at(-1) - history.at(-2);
+        const trend5 = history.slice(-10).at(-1) - history.slice(-10)[0];
+        const trend15 = history.slice(-30).at(-1) - history.slice(-30)[0];
+
+        const vol = Math.max(...history.slice(-30)) - Math.min(...history.slice(-30));
+
+        const variation = ((history.at(-1) - history.at(-2)) / history.at(-2)) * 100;
+
+        const conclusion =
+            trend15 > 0 ? "Dynamique favorable." :
+            trend15 < 0 ? "Dynamique baissière." :
+            "Tendance stable.";
+
+        return message.reply(
+            `📊 **Analyse de ${nameReal} :**\n\n` +
+            `• 📊 Tendance 1 min : ${shortTrend > 0 ? "📈" : shortTrend < 0 ? "📉" : "➖"}\n` +
+            `• 🕒 Tendance 5 min : ${trend5 > 0 ? "📈" : trend5 < 0 ? "📉" : "➖"}\n` +
+            `• 🕒 Tendance 15 min : ${trend15 > 0 ? "📈" : trend15 < 0 ? "📉" : "➖"}\n` +
+            `• 🎯 Volatilité : ${vol < 0.2 ? "faible" : vol < 0.6 ? "modérée" : "élevée"}\n` +
+            `• 🔄 Variation récente : ${variation.toFixed(2)}%\n\n` +
+            `📝 **Conclusion :** ${conclusion}`
+        );
+    }
+});
+
+// ----------------------
+// BOUCLE PRINCIPALE
+// ----------------------
+setInterval(async () => {
+    for (const symbol of symbols) {
+        try {
+            const quote = await yahooFinance.quote(symbol);
+            const price = quote.regularMarketPrice;
+
+            if (!priceHistory[symbol]) priceHistory[symbol] = [];
+            priceHistory[symbol].push(price);
+
+            if (priceHistory[symbol].length > 200) {
+                priceHistory[symbol].shift();
+            }
+
+        } catch (e) {
+            console.log("Erreur Yahoo:", e);
+        }
+    }
+}, 60000);
+
+// ----------------------
+// LOGIN
+// ----------------------
 client.login(process.env.TOKEN);
+
 

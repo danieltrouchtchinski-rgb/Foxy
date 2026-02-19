@@ -12,6 +12,7 @@
   "type": "commonjs",
   "dependencies": {
     "discord.js": "^14.25.1",
+<<<<<<< HEAD
     "dotenv": "^17.3.1",
     "finnhub": "^2.0.13",
     "yahoo-finance2": "^3.13.0"
@@ -24,4 +25,9 @@
     "url": "https://github.com/danieltrouchtchinski-rgb/Foxy/issues"
   },
   "homepage": "https://github.com/danieltrouchtchinski-rgb/Foxy#readme"
+=======
+    "yahoo-finance2": "^3.13.0",
+    "dotenv": "^16.4.0"
+  }
+>>>>>>> e7bf79537cc0e8a5c2fd33ffc6d7a99c5b98cf49
 }
