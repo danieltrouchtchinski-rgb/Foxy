@@ -73,7 +73,7 @@ const client = new Client({
 // ----------------------
 // READY MESSAGE
 // ----------------------
-client.once("ready", () => {
+client.once("clientReady", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
     client.users.fetch(ADMIN_ID).then(user => {
         user.send("✅ Le bot vient de redémarrer et est maintenant en ligne.");
