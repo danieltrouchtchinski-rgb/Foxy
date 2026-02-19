@@ -218,6 +218,57 @@ setInterval(async () => {
                 priceHistory[symbol].shift();
             }
 
+            // ----------------------
+            // ALERTES 1% AVEC BOUTONS
+            // ----------------------
+            if (!lastPrices[symbol]) {
+                lastPrices[symbol] = price;
+                continue;
+            }
+
+            const oldPrice = lastPrices[symbol];
+            const variation = ((price - oldPrice) / oldPrice) * 100;
+
+            if (Math.abs(variation) >= 1) {
+
+                const now = Date.now();
+                if (!lastAlertTime[symbol] || now - lastAlertTime[symbol] > 5 * 60 * 1000) {
+
+                    lastAlertTime[symbol] = now;
+
+                    const name = symbolNames[symbol];
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`acheter_${symbol}_${price}`)
+                            .setLabel("Acheter")
+                            .setStyle(ButtonStyle.Success),
+
+                        new ButtonBuilder()
+                            .setCustomId(`vendre_${symbol}_${price}`)
+                            .setLabel("Vendre")
+                            .setStyle(ButtonStyle.Danger),
+
+                        new ButtonBuilder()
+                            .setCustomId(`ignore_${symbol}_${price}`)
+                            .setLabel("Ignorer")
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                    client.users.fetch(ADMIN_ID).then(user => {
+                        user.send({
+                            content:
+                                `🚨 **Alerte ${name} (${symbol})**\n` +
+                                `Variation : ${variation.toFixed(2)}%\n` +
+                                `Prix actuel : ${price}$`,
+                            components: [row]
+                        });
+                    });
+                }
+            }
+
+            lastPrices[symbol] = price;
+
         } catch (e) {
             console.log("Erreur Yahoo:", e);
         }
@@ -228,4 +279,3 @@ setInterval(async () => {
 // LOGIN
 // ----------------------
 client.login(process.env.TOKEN);
-
