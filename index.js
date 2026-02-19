@@ -127,6 +127,10 @@ client.on("interactionCreate", async interaction => {
         });
     }
 });
+const finnhub = require("finnhub");
+
+const finnhubClient = new finnhub.DefaultApi();
+finnhubClient.apiClient.authentications["api_key"].apiKey = process.env.FINNHUB_KEY;
 
 // ----------------------
 // CHECK MARKETS
