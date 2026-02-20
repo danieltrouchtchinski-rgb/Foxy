@@ -1,5 +1,5 @@
-const { 
-    Client, 
+const {
+    Client,
     GatewayIntentBits,
     ActionRowBuilder,
     ButtonBuilder,
@@ -7,14 +7,26 @@ const {
     Partials
 } = require("discord.js");
 
-const YahooFinance = require("yahoo-finance2").default;
-const yahooFinance = new YahooFinance();
+const Finnhub = require("finnhub");
 
-const ADMIN_ID = "1238123426959462432"; 
+// --- CONFIG ---
+const ADMIN_ID = "1238123426959462432";
+const symbols = [
+    "AAPL", "TSLA", "NVDA", "AMZN", "META",
+    "MSFT", "BTC-USD", "ETH-USD"
+];
+
 const lastPrices = {};
 const lastAlertTime = {};
 const positions = {};
 
+// --- FINNHUB INIT ---
+const api_key = Finnhub.ApiClient.instance.authentications["api_key"];
+api_key.apiKey = process.env.FINNHUB;
+
+const finnhubClient = new Finnhub.DefaultApi();
+
+// --- DISCORD CLIENT ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -22,24 +34,19 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages
     ],
-    partials: [Partials.Channel] // <-- obligatoire pour les DM
+    partials: [Partials.Channel]
 });
 
-// Quand le bot démarre
+// --- READY ---
 client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("🔥Le bot a été mis à jour !🔥");
+        user.send("Le bot fonctionne avec FINNHUB !");
     });
 });
 
-const symbols = [
-    "AAPL", "TSLA", "NVDA", "AMZN", "META",
-    "MSFT", "BTC-USD", "ETH-USD"
-];
-
-// Quand tu cliques sur "Miser"
+// --- BOUTON MISER ---
 client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
 
@@ -58,17 +65,24 @@ client.on("interactionCreate", async interaction => {
     }
 });
 
+// --- CHECK MARKETS ---
 async function checkMarkets() {
     try {
         const adminUser = await client.users.fetch(ADMIN_ID);
 
         for (const symbol of symbols) {
-            const data = await yahooFinance.quote(symbol);
-            const price = data.regularMarketPrice;
+            const data = await new Promise((resolve, reject) => {
+                finnhubClient.quote(symbol, (err, d) => {
+                    if (err) reject(err);
+                    else resolve(d);
+                });
+            });
+
+            const price = data.c; // prix actuel
 
             if (!price) continue;
 
-            // --- 1) Détection des opportunités ---
+            // --- 1) Détection opportunités ---
             if (lastPrices[symbol]) {
                 const oldPrice = lastPrices[symbol];
                 const change = ((price - oldPrice) / oldPrice) * 100;
@@ -80,9 +94,7 @@ async function checkMarkets() {
                     continue;
                 }
 
-                // Opportunité intéressante : +3%
-                if (change >= 1) {
-
+                if (change >= 3) {
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId(`miser_${symbol}_${price}`)
@@ -91,7 +103,7 @@ async function checkMarkets() {
                     );
 
                     await adminUser.send({
-                        content: `💡 Tu devrais miser sur **${symbol}** ! Les prix ont augmenté de **${change.toFixed(2)}%** (prix actuel : ${price}).`,
+                        content: `💡 **${symbol}** a bondi de **${change.toFixed(2)}%** (prix : ${price}).`,
                         components: [row]
                     });
 
@@ -104,16 +116,16 @@ async function checkMarkets() {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                if (perf >= 1) {
+                if (perf >= 3) {
                     await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+1%** ! Tu peux prendre tes profits.`
+                        `🎉 **${symbol}** a dépassé **+3%** ! Tu peux prendre tes profits.`
                     );
                     delete positions[symbol];
                 }
 
-                if (perf <= -1) {
+                if (perf <= -3) {
                     await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-1%** ! Tu devrais envisager de couper ta position.`
+                        `⚠️ **${symbol}** est tombé sous **-3%** ! Tu devrais couper ta position.`
                     );
                     delete positions[symbol];
                 }
@@ -121,7 +133,7 @@ async function checkMarkets() {
 
             lastPrices[symbol] = price;
 
-            await new Promise(res => setTimeout(res, 500));
+            await new Promise(res => setTimeout(res, 300)); // éviter le spam API
         }
     } catch (err) {
         console.error("Erreur dans checkMarkets:", err);
@@ -129,4 +141,6 @@ async function checkMarkets() {
 }
 
 setInterval(checkMarkets, 60_000);
+
+// --- LOGIN ---
 client.login(process.env.TOKEN);
