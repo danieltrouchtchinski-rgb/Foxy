@@ -94,7 +94,7 @@ client.on("interactionCreate", async interaction => {
     const extra = parts[2];
 
     // --- MISER ---
-    if (action === "miser") {
+    if (action === "Acheter") {
         const entry = parseFloat(extra);
         if (isNaN(entry)) {
             return interaction.reply({ content: "Erreur : prix invalide.", ephemeral: true });
