@@ -18,6 +18,18 @@ const symbols = [
     "MSFT", "BTC-USD", "ETH-USD"
 ];
 
+// Noms humains
+const prettyNames = {
+    "AAPL": "Apple",
+    "TSLA": "Tesla",
+    "NVDA": "Nvidia",
+    "AMZN": "Amazon",
+    "META": "Meta",
+    "MSFT": "Microsoft",
+    "BTC-USD": "Bitcoin",
+    "ETH-USD": "Ethereum"
+};
+
 const lastPrices = {};
 const lastAlertTime = {};
 const positions = {};
@@ -42,12 +54,13 @@ client.once("clientReady", () => {
     });
 });
 
-// --- BOUTON MISER ---
+// --- BOUTONS ---
 client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
 
     const [action, symbol, entry] = interaction.customId.split("_");
 
+    // --- MISER ---
     if (action === "miser") {
         positions[symbol] = {
             entry: parseFloat(entry),
@@ -55,9 +68,15 @@ client.on("interactionCreate", async interaction => {
         };
 
         await interaction.reply({
-            content: `👍 Position enregistrée sur **${symbol}** à **${entry}**`,
+            content: `👍 Position enregistrée sur **${prettyNames[symbol]}** à **${entry}**`,
             ephemeral: true
         });
+    }
+
+    // --- IGNORER ---
+    if (action === "ignore") {
+        await interaction.message.delete().catch(() => {});
+        await interaction.reply({ content: "Message ignoré.", ephemeral: true });
     }
 });
 
@@ -70,15 +89,17 @@ async function getQuote(symbol) {
 
 // --- CHECK MARKETS ---
 console.log("FINNHUB KEY:", FINNHUB_KEY);
+
 async function checkMarkets() {
     try {
         const adminUser = await client.users.fetch(ADMIN_ID);
 
         for (const symbol of symbols) {
+            const name = prettyNames[symbol];
             const data = await getQuote(symbol);
-            const price = data.c; // prix actuel
-            console.log(symbol, "PRICE:", price, "OLD:", lastPrices[symbol]);
+            const price = data.c;
 
+            console.log(name, "PRICE:", price, "OLD:", lastPrices[symbol]);
 
             if (!price) continue;
 
@@ -89,7 +110,6 @@ async function checkMarkets() {
 
                 const now = Date.now();
 
-                // Cooldown 10 minutes
                 if (lastAlertTime[symbol] && now - lastAlertTime[symbol] < 10 * 60 * 1000) {
                     continue;
                 }
@@ -99,11 +119,15 @@ async function checkMarkets() {
                         new ButtonBuilder()
                             .setCustomId(`miser_${symbol}_${price}`)
                             .setLabel("Miser")
-                            .setStyle(ButtonStyle.Success)
+                            .setStyle(ButtonStyle.Success),
+                        new ButtonBuilder()
+                            .setCustomId(`ignore_${symbol}_0`)
+                            .setLabel("Ignorer")
+                            .setStyle(ButtonStyle.Secondary)
                     );
 
                     await adminUser.send({
-                        content: `💡 **${symbol}** a bondi de **${change.toFixed(2)}%** (prix : ${price}).`,
+                        content: `💡 **${name}** a bougé de **${change.toFixed(2)}%** (prix : ${price}).`,
                         components: [row]
                     });
 
@@ -116,24 +140,34 @@ async function checkMarkets() {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                if (perf >= 0.1) {
-                    await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+0.1%** ! Tu peux prendre tes profits.`
-                    );
-                    delete positions[symbol];
-                }
+                const mise = 100;
+                const profit = mise * (perf / 100);
 
-                if (perf <= -0.1) {
-                    await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-0.1%** ! Tu devrais couper ta position.`
+                if (perf >= 0.1 || perf <= -0.1) {
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`ignore_${symbol}_0`)
+                            .setLabel("Ignorer")
+                            .setStyle(ButtonStyle.Secondary)
                     );
+
+                    await adminUser.send({
+                        content:
+                            `📊 **Bilan pour ${name}**\n` +
+                            `📈 Prix d'entrée : **${entry}**\n` +
+                            `📉 Prix actuel : **${price}**\n` +
+                            `📊 Performance : **${perf.toFixed(2)}%**\n` +
+                            `💰 Résultat : **${profit.toFixed(2)}€**`,
+                        components: [row]
+                    });
+
                     delete positions[symbol];
                 }
             }
 
             lastPrices[symbol] = price;
 
-            await new Promise(res => setTimeout(res, 300)); // éviter le spam API
+            await new Promise(res => setTimeout(res, 300));
         }
     } catch (err) {
         console.error("Erreur dans checkMarkets:", err);
@@ -144,4 +178,3 @@ setInterval(checkMarkets, 60_000);
 
 // --- LOGIN ---
 client.login(process.env.TOKEN);
-
