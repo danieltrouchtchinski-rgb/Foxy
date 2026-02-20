@@ -34,7 +34,7 @@ const client = new Client({
 });
 
 // --- READY ---
-client.once("ready", () => {
+client.once("clientready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
