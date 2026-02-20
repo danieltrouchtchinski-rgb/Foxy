@@ -69,6 +69,7 @@ async function getQuote(symbol) {
 }
 
 // --- CHECK MARKETS ---
+console.log("FINNHUB KEY:", FINNHUB_KEY);
 async function checkMarkets() {
     try {
         const adminUser = await client.users.fetch(ADMIN_ID);
