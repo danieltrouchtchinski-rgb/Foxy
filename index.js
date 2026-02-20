@@ -85,7 +85,7 @@ client.on("interactionCreate", async interaction => {
     const [action, symbol, entry] = interaction.customId.split("_");
 
     // --- MISER ---
-    if (action === "miser") {
+    if (action === "acheter") {
         positions[symbol] = {
             entry: parseFloat(entry),
             time: Date.now()
