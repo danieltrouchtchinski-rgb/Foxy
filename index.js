@@ -7,10 +7,12 @@ const {
     Partials
 } = require("discord.js");
 
-const Finnhub = require("finnhub");
+const fetch = require("node-fetch");
 
 // --- CONFIG ---
 const ADMIN_ID = "1238123426959462432";
+const FINNHUB_KEY = process.env.FINNHUB;
+
 const symbols = [
     "AAPL", "TSLA", "NVDA", "AMZN", "META",
     "MSFT", "BTC-USD", "ETH-USD"
@@ -19,12 +21,6 @@ const symbols = [
 const lastPrices = {};
 const lastAlertTime = {};
 const positions = {};
-
-// --- FINNHUB INIT ---
-const api_key = Finnhub.ApiClient.instance.authentications["api_key"];
-api_key.apiKey = process.env.FINNHUB;
-
-const finnhubClient = new Finnhub.DefaultApi();
 
 // --- DISCORD CLIENT ---
 const client = new Client({
@@ -65,19 +61,20 @@ client.on("interactionCreate", async interaction => {
     }
 });
 
+// --- FINNHUB FETCH ---
+async function getQuote(symbol) {
+    const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`;
+    const res = await fetch(url);
+    return await res.json();
+}
+
 // --- CHECK MARKETS ---
 async function checkMarkets() {
     try {
         const adminUser = await client.users.fetch(ADMIN_ID);
 
         for (const symbol of symbols) {
-            const data = await new Promise((resolve, reject) => {
-                finnhubClient.quote(symbol, (err, d) => {
-                    if (err) reject(err);
-                    else resolve(d);
-                });
-            });
-
+            const data = await getQuote(symbol);
             const price = data.c; // prix actuel
 
             if (!price) continue;
@@ -94,7 +91,7 @@ async function checkMarkets() {
                     continue;
                 }
 
-                if (change >= 3) {
+                if (change >= 1) {
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId(`miser_${symbol}_${price}`)
@@ -116,16 +113,16 @@ async function checkMarkets() {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                if (perf >= 3) {
+                if (perf >= 1) {
                     await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+3%** ! Tu peux prendre tes profits.`
+                        `🎉 **${symbol}** a dépassé **+1%** ! Tu peux prendre tes profits.`
                     );
                     delete positions[symbol];
                 }
 
-                if (perf <= -3) {
+                if (perf <= -1) {
                     await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-3%** ! Tu devrais couper ta position.`
+                        `⚠️ **${symbol}** est tombé sous **-1%** ! Tu devrais couper ta position.`
                     );
                     delete positions[symbol];
                 }
