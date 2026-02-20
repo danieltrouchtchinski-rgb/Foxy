@@ -202,7 +202,7 @@ async function checkMarkets() {
                         );
 
                         await adminUser.send({
-                            content: `💡 **${name}** a bougé de **${change.toFixed(2)}%** (prix : ${price.toFixed(2)}).`,
+                            content: `💡 **${name}** a bougé de **${change.toFixed(2)}%**.`,
                             components: [row]
                         });
 
