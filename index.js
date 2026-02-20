@@ -129,3 +129,4 @@ async function checkMarkets() {
 }
 
 setInterval(checkMarkets, 60_000);
+client.login(process.env.TOKEN);
