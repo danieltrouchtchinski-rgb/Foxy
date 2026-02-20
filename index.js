@@ -94,7 +94,7 @@ async function checkMarkets() {
                     continue;
                 }
 
-                if (change >= 1) {
+                if (change >= 0.1) {
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId(`miser_${symbol}_${price}`)
@@ -116,16 +116,16 @@ async function checkMarkets() {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                if (perf >= 1) {
+                if (perf >= 0.1) {
                     await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+1%** ! Tu peux prendre tes profits.`
+                        `🎉 **${symbol}** a dépassé **+0.1%** ! Tu peux prendre tes profits.`
                     );
                     delete positions[symbol];
                 }
 
-                if (perf <= -1) {
+                if (perf <= -0.1) {
                     await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-1%** ! Tu devrais couper ta position.`
+                        `⚠️ **${symbol}** est tombé sous **-0.1%** ! Tu devrais couper ta position.`
                     );
                     delete positions[symbol];
                 }
