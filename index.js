@@ -38,7 +38,7 @@ client.once("clientReady", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✨ Mise à jour réussie (axios + clientReady)");
+        user.send("✨ Mise à jour réussie !");
     });
 });
 
