@@ -7,7 +7,8 @@ const {
     Partials
 } = require("discord.js");
 
-const fetch = require("node-fetch");
+const fetch = (...args) => 
+    import("node-fetch").then(({default: fetch}) => fetch(...args));
 
 // --- CONFIG ---
 const ADMIN_ID = "1238123426959462432";
