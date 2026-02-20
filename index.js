@@ -69,6 +69,7 @@ async function getQuote(symbol) {
 }
 
 // --- CHECK MARKETS ---
+console.log(symbol, "PRICE:", price, "OLD:", lastPrices[symbol]);
 console.log("FINNHUB KEY:", FINNHUB_KEY);
 async function checkMarkets() {
     try {
