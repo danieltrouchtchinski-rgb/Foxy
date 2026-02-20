@@ -7,8 +7,7 @@ const {
     Partials
 } = require("discord.js");
 
-const fetch = (...args) => 
-    import("node-fetch").then(({default: fetch}) => fetch(...args));
+const axios = require("axios");
 
 // --- CONFIG ---
 const ADMIN_ID = "1238123426959462432";
@@ -35,11 +34,11 @@ const client = new Client({
 });
 
 // --- READY ---
-client.once("clientready", () => {
+client.once("clientReady", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✨ Mise à jour réussie");
+        user.send("✨ Mise à jour réussie (axios + clientReady)");
     });
 });
 
@@ -65,8 +64,8 @@ client.on("interactionCreate", async interaction => {
 // --- FINNHUB FETCH ---
 async function getQuote(symbol) {
     const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`;
-    const res = await fetch(url);
-    return await res.json();
+    const res = await axios.get(url);
+    return res.data;
 }
 
 // --- CHECK MARKETS ---
@@ -142,3 +141,4 @@ setInterval(checkMarkets, 60_000);
 
 // --- LOGIN ---
 client.login(process.env.TOKEN);
+
