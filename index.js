@@ -78,6 +78,8 @@ async function checkMarkets() {
         for (const symbol of symbols) {
             const data = await getQuote(symbol);
             const price = data.c; // prix actuel
+            console.log(symbol, "PRICE:", price, "OLD:", lastPrices[symbol]);
+
 
             if (!price) continue;
 
