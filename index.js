@@ -42,7 +42,7 @@ client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("Le bot fonctionne avec FINNHUB !");
+        user.send("✨ Mise à jour réussie");
     });
 });
 
