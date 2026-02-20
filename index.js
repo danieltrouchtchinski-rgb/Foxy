@@ -3,7 +3,8 @@ const {
     GatewayIntentBits,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle 
+    ButtonStyle,
+    Partials
 } = require("discord.js");
 
 const YahooFinance = require("yahoo-finance2").default;
@@ -12,7 +13,7 @@ const yahooFinance = new YahooFinance();
 const ADMIN_ID = "1238123426959462432"; 
 const lastPrices = {};
 const lastAlertTime = {};
-const positions = {}; // <-- stocke les actions sur lesquelles tu as "misé"
+const positions = {};
 
 const client = new Client({
     intents: [
@@ -20,11 +21,12 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.DirectMessages
-    ]
+    ],
+    partials: [Partials.Channel] // <-- obligatoire pour les DM
 });
 
 // Quand le bot démarre
-client.once("clientReady", () => {
+client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
