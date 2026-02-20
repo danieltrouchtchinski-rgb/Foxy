@@ -13,12 +13,16 @@ const axios = require("axios");
 const ADMIN_ID = "1238123426959462432";
 const FINNHUB_KEY = process.env.FINNHUB;
 
+// --- 28 SYMBOLS ---
 const symbols = [
-    "AAPL", "TSLA", "NVDA", "AMZN", "META",
-    "MSFT", "BTC-USD", "ETH-USD"
+    "AAPL", "TSLA", "NVDA", "AMZN", "META", "MSFT",
+    "GOOGL", "NFLX", "AMD", "INTC", "IBM", "ORCL",
+    "UBER", "LYFT", "SHOP", "PYPL", "SQ", "BA",
+    "DIS", "NKE", "SBUX", "KO", "PEP", "XOM",
+    "CVX", "JPM", "V", "MA"
 ];
 
-// Noms humains
+// --- NOMS HUMAINS ---
 const prettyNames = {
     "AAPL": "Apple",
     "TSLA": "Tesla",
@@ -26,8 +30,28 @@ const prettyNames = {
     "AMZN": "Amazon",
     "META": "Meta",
     "MSFT": "Microsoft",
-    "BTC-USD": "Bitcoin",
-    "ETH-USD": "Ethereum"
+    "GOOGL": "Google",
+    "NFLX": "Netflix",
+    "AMD": "AMD",
+    "INTC": "Intel",
+    "IBM": "IBM",
+    "ORCL": "Oracle",
+    "UBER": "Uber",
+    "LYFT": "Lyft",
+    "SHOP": "Shopify",
+    "PYPL": "PayPal",
+    "SQ": "Block",
+    "BA": "Boeing",
+    "DIS": "Disney",
+    "NKE": "Nike",
+    "SBUX": "Starbucks",
+    "KO": "Coca-Cola",
+    "PEP": "Pepsi",
+    "XOM": "ExxonMobil",
+    "CVX": "Chevron",
+    "JPM": "JP Morgan",
+    "V": "Visa",
+    "MA": "Mastercard"
 };
 
 const lastPrices = {};
@@ -73,6 +97,39 @@ client.on("interactionCreate", async interaction => {
         });
     }
 
+    // --- VENDRE ---
+    if (action === "vendre") {
+        const entryPrice = positions[symbol]?.entry;
+        const currentPrice = parseFloat(entry);
+
+        if (!entryPrice) {
+            return interaction.reply({ content: "Erreur : aucune position trouvée.", ephemeral: true });
+        }
+
+        const perf = ((currentPrice - entryPrice) / entryPrice) * 100;
+        const mise = 100;
+        const profit = mise * (perf / 100);
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`ignore_${symbol}_0`)
+                .setLabel("ignorer")
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        await interaction.reply({
+            content:
+                `📊 **Bilan pour ${prettyNames[symbol]}**\n` +
+                `📈 Prix d'entrée : **${entryPrice}**\n` +
+                `📉 Prix actuel : **${currentPrice}**\n` +
+                `📊 Performance : **${perf.toFixed(2)}%**\n` +
+                `💰 Résultat : **${profit.toFixed(2)}€**`,
+            components: [row]
+        });
+
+        delete positions[symbol];
+    }
+
     // --- IGNORER ---
     if (action === "ignore") {
         await interaction.message.delete().catch(() => {});
@@ -110,58 +167,53 @@ async function checkMarkets() {
 
                 const now = Date.now();
 
-                if (lastAlertTime[symbol] && now - lastAlertTime[symbol] < 10 * 60 * 1000) {
-                    continue;
-                }
+                if (!lastAlertTime[symbol] || now - lastAlertTime[symbol] > 10 * 60 * 1000) {
+                    if (change >= 0.1) {
+                        const row = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(`miser_${symbol}_${price}`)
+                                .setLabel("Miser")
+                                .setStyle(ButtonStyle.Success),
+                            new ButtonBuilder()
+                                .setCustomId(`ignore_${symbol}_0`)
+                                .setLabel("Ignorer")
+                                .setStyle(ButtonStyle.Secondary)
+                        );
 
-                if (change >= 0.1) {
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`miser_${symbol}_${price}`)
-                            .setLabel("Miser")
-                            .setStyle(ButtonStyle.Success),
-                        new ButtonBuilder()
-                            .setCustomId(`ignore_${symbol}_0`)
-                            .setLabel("Ignorer")
-                            .setStyle(ButtonStyle.Secondary)
-                    );
+                        await adminUser.send({
+                            content: `💡 **${name}** a bougé de **${change.toFixed(2)}%** (prix : ${price}).`,
+                            components: [row]
+                        });
 
-                    await adminUser.send({
-                        content: `💡 **${name}** a bougé de **${change.toFixed(2)}%** (prix : ${price}).`,
-                        components: [row]
-                    });
-
-                    lastAlertTime[symbol] = now;
+                        lastAlertTime[symbol] = now;
+                    }
                 }
             }
 
-            // --- 2) Surveillance des positions ---
+            // --- 2) Surveillance des positions (ALERTE ±3%) ---
             if (positions[symbol]) {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                const mise = 100;
-                const profit = mise * (perf / 100);
+                if (perf >= 3 || perf <= -3) {
+                    const direction = perf >= 3 ? "augmenté" : "chuté";
+                    const emoji = perf >= 3 ? "📈" : "📉";
 
-                if (perf >= 0.1 || perf <= -0.1) {
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
+                            .setCustomId(`vendre_${symbol}_${price}`)
+                            .setLabel("Vendre")
+                            .setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder()
                             .setCustomId(`ignore_${symbol}_0`)
-                            .setLabel("Ignorer")
+                            .setLabel("ignorer")
                             .setStyle(ButtonStyle.Secondary)
                     );
 
                     await adminUser.send({
-                        content:
-                            `📊 **Bilan pour ${name}**\n` +
-                            `📈 Prix d'entrée : **${entry}**\n` +
-                            `📉 Prix actuel : **${price}**\n` +
-                            `📊 Performance : **${perf.toFixed(2)}%**\n` +
-                            `💰 Résultat : **${profit.toFixed(2)}€**`,
+                        content: `${emoji} **${name}** a **${direction} de 3%** !`,
                         components: [row]
                     });
-
-                    delete positions[symbol];
                 }
             }
 
