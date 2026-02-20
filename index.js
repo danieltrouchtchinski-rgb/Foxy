@@ -30,7 +30,7 @@ client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("Le bot fonctionne et peut t’envoyer des messages !");
+        user.send("🔥Le bot a été mis à jour !🔥");
     });
 });
 
@@ -81,7 +81,7 @@ async function checkMarkets() {
                 }
 
                 // Opportunité intéressante : +3%
-                if (change >= 3) {
+                if (change >= 1) {
 
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
@@ -104,16 +104,16 @@ async function checkMarkets() {
                 const entry = positions[symbol].entry;
                 const perf = ((price - entry) / entry) * 100;
 
-                if (perf >= 3) {
+                if (perf >= 1) {
                     await adminUser.send(
-                        `🎉 **${symbol}** a dépassé **+3%** ! Tu peux prendre tes profits.`
+                        `🎉 **${symbol}** a dépassé **+1%** ! Tu peux prendre tes profits.`
                     );
                     delete positions[symbol];
                 }
 
-                if (perf <= -3) {
+                if (perf <= -1) {
                     await adminUser.send(
-                        `⚠️ **${symbol}** est tombé sous **-3%** ! Tu devrais envisager de couper ta position.`
+                        `⚠️ **${symbol}** est tombé sous **-1%** ! Tu devrais envisager de couper ta position.`
                     );
                     delete positions[symbol];
                 }
