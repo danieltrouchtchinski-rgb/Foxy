@@ -11,9 +11,10 @@ const {
 const axios = require("axios");
 
 // --- CONFIG ---
-const ADMIN_ID = "1238123426959462432";
+const ADMIN_ID = process.env.ADMIN_ID || "1238123426959462432";
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+const TWELVE_KEY = process.env.TWELVE_KEY;
 
 // --- 28 SYMBOLS ---
 const symbols = [
@@ -102,37 +103,40 @@ client.once("ready", () => {
     registerCommands();
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✨ Bot mis à jour avec Yahoo Finance !");
-    });
+        user.send("✨ Bot mis à jour avec Twelve Data !");
+    }).catch(() => {});
 });
 
-// --- YAHOO FINANCE FETCH (FIXÉ) ---
+// --- TWELVE DATA FETCH ---
 async function getQuote(symbol) {
     try {
-        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-        const res = await axios.get(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
-        });
+        const url = `https://api.twelvedata.com/price?symbol=${symbol}&apikey=${TWELVE_KEY}`;
+        const res = await axios.get(url);
 
-        const price = res.data.quoteResponse.result[0]?.regularMarketPrice;
-        return price || null;
+        if (!res.data || !res.data.price) {
+            console.log(`Erreur TwelveData pour ${symbol}:`, res.data);
+            return null;
+        }
 
+        const price = parseFloat(res.data.price);
+        if (isNaN(price)) return null;
+        return price;
     } catch (err) {
-        console.log("Erreur Yahoo:", err.response?.status || err.message);
+        console.log(`Erreur TwelveData pour ${symbol}:`, err.response?.status || err.message);
         return null;
     }
 }
 
-// --- BOUTONS ---
+// --- BOUTONS & COMMANDES ---
 client.on("interactionCreate", async interaction => {
+    // Slash command
     if (interaction.isChatInputCommand()) {
         if (interaction.commandName === "positions") {
             return handlePositionsCommand(interaction);
         }
     }
 
+    // Boutons
     if (!interaction.isButton()) return;
 
     const [action, symbol, price] = interaction.customId.split("_");
@@ -158,8 +162,13 @@ client.on("interactionCreate", async interaction => {
         }
 
         const current = await getQuote(symbol);
+        if (!current) {
+            return interaction.reply({ content: "Impossible de récupérer le prix actuel.", ephemeral: true });
+        }
+
         const perf = ((current - pos.entry) / pos.entry) * 100;
-        const profit = (perf / 100) * 100;
+        const mise = 100;
+        const profit = (perf / 100) * mise;
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -174,7 +183,7 @@ client.on("interactionCreate", async interaction => {
                 `📈 Entrée : **${pos.entry}**\n` +
                 `📉 Actuel : **${current}**\n` +
                 `📊 Perf : **${perf.toFixed(2)}%**\n` +
-                `💰 Résultat : **${profit.toFixed(2)}€**`,
+                `💰 Résultat (mise 100€) : **${profit.toFixed(2)}€**`,
             components: [row]
         });
 
@@ -199,15 +208,21 @@ async function handlePositionsCommand(interaction) {
     for (const symbol of Object.keys(positions)) {
         const pos = positions[symbol];
         const current = await getQuote(symbol);
+        if (!current) {
+            msg += `**${prettyNames[symbol]}** → impossible de récupérer le prix actuel.\n\n`;
+            continue;
+        }
+
         const perf = ((current - pos.entry) / pos.entry) * 100;
-        const profit = (perf / 100) * 100;
+        const mise = 100;
+        const profit = (perf / 100) * mise;
 
         msg +=
             `**${prettyNames[symbol]}**\n` +
             `Entrée : ${pos.entry}\n` +
             `Actuel : ${current}\n` +
             `Perf : ${perf.toFixed(2)}%\n` +
-            `Résultat : ${profit.toFixed(2)}€\n\n`;
+            `Résultat (mise 100€) : ${profit.toFixed(2)}€\n\n`;
     }
 
     return interaction.reply(msg);
@@ -235,7 +250,7 @@ async function checkMarkets() {
             hist.p2 = hist.p1;
             hist.p1 = price;
 
-            // --- 1) Détection tendance haussière ---
+            // --- 1) Détection tendance haussière 1min → 2min → 5min ---
             if (hist.p1 && hist.p2 && hist.p5) {
                 if (hist.p1 > hist.p2 && hist.p2 > hist.p5) {
                     const row = new ActionRowBuilder().addComponents(
