@@ -4,13 +4,17 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    Partials
+    Partials,
+    REST,
+    Routes
 } = require("discord.js");
 const axios = require("axios");
 
 // --- CONFIG ---
 const ADMIN_ID = "1238123426959462432";
 const FINNHUB_KEY = process.env.FINNHUB;
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
 
 // --- 28 SYMBOLS ---
 const symbols = [
@@ -55,24 +59,49 @@ const prettyNames = {
 
 // --- STOCKAGE DES PRIX ---
 const priceHistory = {}; 
-// priceHistory[symbol] = { p1: x, p2: y, p5: z }
+// priceHistory[symbol] = { p1, p2, p5 }
 
-const positions = {}; // positions[symbol] = { entry }
+// --- POSITIONS ---
+const positions = {}; 
+// positions[symbol] = { entry, alerted }
 
 // --- DISCORD CLIENT ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.MessageContent
     ],
     partials: [Partials.Channel]
 });
 
+// --- ENREGISTREMENT DE LA COMMANDE /positions ---
+async function registerCommands() {
+    const commands = [
+        {
+            name: "positions",
+            description: "Affiche toutes les actions que tu as achetées."
+        }
+    ];
+
+    const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+    try {
+        await rest.put(
+            Routes.applicationCommands(CLIENT_ID),
+            { body: commands }
+        );
+        console.log("Commande /positions enregistrée !");
+    } catch (err) {
+        console.error("Erreur enregistrement commandes :", err);
+    }
+}
+
 // --- READY ---
 client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
+    registerCommands();
+
     client.users.fetch(ADMIN_ID).then(user => {
         user.send("✨ Bot mis à jour !");
     });
@@ -87,6 +116,12 @@ async function getQuote(symbol) {
 
 // --- BOUTONS ---
 client.on("interactionCreate", async interaction => {
+    if (interaction.isChatInputCommand()) {
+        if (interaction.commandName === "positions") {
+            return handlePositionsCommand(interaction);
+        }
+    }
+
     if (!interaction.isButton()) return;
 
     const [action, symbol, price] = interaction.customId.split("_");
@@ -94,7 +129,8 @@ client.on("interactionCreate", async interaction => {
     // --- ACHETER ---
     if (action === "acheter") {
         positions[symbol] = {
-            entry: parseFloat(price)
+            entry: parseFloat(price),
+            alerted: false
         };
 
         return interaction.reply({
@@ -103,12 +139,68 @@ client.on("interactionCreate", async interaction => {
         });
     }
 
+    // --- VENDRE ---
+    if (action === "vendre") {
+        const pos = positions[symbol];
+        if (!pos) {
+            return interaction.reply({ content: "Aucune position trouvée.", ephemeral: true });
+        }
+
+        const current = await getQuote(symbol);
+        const perf = ((current - pos.entry) / pos.entry) * 100;
+        const profit = (perf / 100) * 100;
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`ignore_${symbol}_0`)
+                .setLabel("Ignorer")
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        await interaction.reply({
+            content:
+                `📊 **Bilan pour ${prettyNames[symbol]}**\n` +
+                `📈 Entrée : **${pos.entry}**\n` +
+                `📉 Actuel : **${current}**\n` +
+                `📊 Perf : **${perf.toFixed(2)}%**\n` +
+                `💰 Résultat : **${profit.toFixed(2)}€**`,
+            components: [row]
+        });
+
+        delete positions[symbol];
+    }
+
     // --- IGNORER ---
     if (action === "ignore") {
         await interaction.message.delete().catch(() => {});
         return interaction.reply({ content: "Message ignoré.", ephemeral: true });
     }
 });
+
+// --- COMMANDE /positions ---
+async function handlePositionsCommand(interaction) {
+    if (Object.keys(positions).length === 0) {
+        return interaction.reply("📭 Tu n'as aucune position ouverte.");
+    }
+
+    let msg = "📘 **Tes positions actuelles :**\n\n";
+
+    for (const symbol of Object.keys(positions)) {
+        const pos = positions[symbol];
+        const current = await getQuote(symbol);
+        const perf = ((current - pos.entry) / pos.entry) * 100;
+        const profit = (perf / 100) * 100;
+
+        msg +=
+            `**${prettyNames[symbol]}**\n` +
+            `Entrée : ${pos.entry}\n` +
+            `Actuel : ${current}\n` +
+            `Perf : ${perf.toFixed(2)}%\n` +
+            `Résultat : ${profit.toFixed(2)}€\n\n`;
+    }
+
+    return interaction.reply(msg);
+}
 
 // --- CHECK MARKETS ---
 async function checkMarkets() {
@@ -127,16 +219,14 @@ async function checkMarkets() {
 
             const hist = priceHistory[symbol];
 
-            // Décalage des prix
+            // Décalage
             hist.p5 = hist.p2;
             hist.p2 = hist.p1;
             hist.p1 = price;
 
-            // On attend d'avoir 3 valeurs
+            // --- 1) Détection tendance haussière ---
             if (hist.p1 && hist.p2 && hist.p5) {
-                const rising = hist.p1 > hist.p2 && hist.p2 > hist.p5;
-
-                if (rising) {
+                if (hist.p1 > hist.p2 && hist.p2 > hist.p5) {
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId(`acheter_${symbol}_${price}`)
@@ -155,6 +245,35 @@ async function checkMarkets() {
                 }
             }
 
+            // --- 2) Surveillance des positions (±3%) ---
+            if (positions[symbol]) {
+                const pos = positions[symbol];
+                const perf = ((price - pos.entry) / pos.entry) * 100;
+
+                if (!pos.alerted && (perf >= 3 || perf <= -3)) {
+                    const direction = perf >= 3 ? "augmenté" : "chuté";
+                    const emoji = perf >= 3 ? "📈" : "📉";
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`vendre_${symbol}_0`)
+                            .setLabel("Vendre")
+                            .setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder()
+                            .setCustomId(`ignore_${symbol}_0`)
+                            .setLabel("Ignorer")
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+
+                    await adminUser.send({
+                        content: `${emoji} **${name}** a **${direction} de 3%** !`,
+                        components: [row]
+                    });
+
+                    pos.alerted = true;
+                }
+            }
+
             await new Promise(res => setTimeout(res, 300));
         }
     } catch (err) {
@@ -165,4 +284,4 @@ async function checkMarkets() {
 setInterval(checkMarkets, 60_000);
 
 // --- LOGIN ---
-client.login(process.env.TOKEN);
+client.login(TOKEN);
