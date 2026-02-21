@@ -12,7 +12,6 @@ const axios = require("axios");
 
 // --- CONFIG ---
 const ADMIN_ID = "1238123426959462432";
-const FINNHUB_KEY = process.env.FINNHUB;
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
@@ -103,15 +102,24 @@ client.once("ready", () => {
     registerCommands();
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✨ Bot mis à jour !");
+        user.send("✨ Bot mis à jour avec Yahoo Finance !");
     });
 });
 
-// --- FINNHUB FETCH ---
+// --- YAHOO FINANCE FETCH ---
 async function getQuote(symbol) {
-    const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`;
-    const res = await axios.get(url);
-    return res.data.c;
+    try {
+        const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+        const res = await axios.get(url);
+
+        const price = res.data.quoteResponse.result[0]?.regularMarketPrice;
+
+        if (!price) return null;
+        return price;
+    } catch (err) {
+        console.log("Erreur Yahoo:", err.message);
+        return null;
+    }
 }
 
 // --- BOUTONS ---
@@ -285,3 +293,4 @@ setInterval(checkMarkets, 60_000);
 
 // --- LOGIN ---
 client.login(TOKEN);
+
