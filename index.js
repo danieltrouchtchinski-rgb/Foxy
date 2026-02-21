@@ -53,10 +53,11 @@ const prettyNames = {
     "MA": "Mastercard"
 };
 
-const lastPrices = {};
-const lastAlertTime = {};
-// positions[symbol] = { entry, time, alerted }
-const positions = {};
+// --- STOCKAGE DES PRIX ---
+const priceHistory = {}; 
+// priceHistory[symbol] = { p1: x, p2: y, p5: z }
+
+const positions = {}; // positions[symbol] = { entry }
 
 // --- DISCORD CLIENT ---
 const client = new Client({
@@ -73,87 +74,33 @@ const client = new Client({
 client.once("ready", () => {
     console.log(`Bot connecté en tant que ${client.user.tag}`);
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✨ Mise à jour réussie !");
-    }).catch(console.error);
+        user.send("✨ Bot mis à jour !");
+    });
 });
 
 // --- FINNHUB FETCH ---
 async function getQuote(symbol) {
     const url = `https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`;
     const res = await axios.get(url);
-    return res.data;
+    return res.data.c;
 }
 
 // --- BOUTONS ---
 client.on("interactionCreate", async interaction => {
     if (!interaction.isButton()) return;
 
-    const parts = interaction.customId.split("_");
-    const action = parts[0];
-    const symbol = parts[1];
-    const extra = parts[2];
+    const [action, symbol, price] = interaction.customId.split("_");
 
-    // --- MISER ---
-    if (action === "Acheter") {
-        const entry = parseFloat(extra);
-        if (isNaN(entry)) {
-            return interaction.reply({ content: "Erreur : prix invalide.", ephemeral: true });
-        }
-
+    // --- ACHETER ---
+    if (action === "acheter") {
         positions[symbol] = {
-            entry,
-            time: Date.now(),
-            alerted: false
+            entry: parseFloat(price)
         };
 
         return interaction.reply({
-            content: `👍 Position enregistrée sur **${prettyNames[symbol]}** à **${entry}**`,
+            content: `👍 Position ouverte sur **${prettyNames[symbol]}** à **${price}**`,
             ephemeral: true
         });
-    }
-
-    // --- VENDRE (prix en direct) ---
-    if (action === "vendre") {
-        const position = positions[symbol];
-        if (!position) {
-            return interaction.reply({ content: "Erreur : aucune position trouvée.", ephemeral: true });
-        }
-
-        try {
-            const data = await getQuote(symbol);
-            const currentPrice = data.c;
-
-            if (!currentPrice) {
-                return interaction.reply({ content: "Impossible de récupérer le prix actuel.", ephemeral: true });
-            }
-
-            const entryPrice = position.entry;
-            const perf = ((currentPrice - entryPrice) / entryPrice) * 100;
-            const mise = 100;
-            const profit = mise * (perf / 100);
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`ignore_${symbol}_0`)
-                    .setLabel("ignorer")
-                    .setStyle(ButtonStyle.Secondary)
-            );
-
-            await interaction.reply({
-                content:
-                    `📊 **Bilan pour ${prettyNames[symbol]}**\n` +
-                    `📈 Prix d'entrée : **${entryPrice}**\n` +
-                    `📉 Prix actuel : **${currentPrice}**\n` +
-                    `📊 Performance : **${perf.toFixed(2)}%**\n` +
-                    `💰 Résultat : **${profit.toFixed(2)}€**`,
-                components: [row]
-            });
-
-            delete positions[symbol];
-        } catch (err) {
-            console.error("Erreur VENDRE:", err);
-            return interaction.reply({ content: "Erreur lors de la récupération du prix.", ephemeral: true });
-        }
     }
 
     // --- IGNORER ---
@@ -164,88 +111,54 @@ client.on("interactionCreate", async interaction => {
 });
 
 // --- CHECK MARKETS ---
-console.log("FINNHUB KEY:", FINNHUB_KEY);
-
 async function checkMarkets() {
     try {
         const adminUser = await client.users.fetch(ADMIN_ID);
 
         for (const symbol of symbols) {
             const name = prettyNames[symbol];
-            const data = await getQuote(symbol);
-            const price = data.c;
+            const price = await getQuote(symbol);
 
-            console.log(name, "PRICE:", price, "OLD:", lastPrices[symbol]);
+            if (!price) continue;
 
-            if (!price) {
-                lastPrices[symbol] = price;
-                continue;
+            if (!priceHistory[symbol]) {
+                priceHistory[symbol] = { p1: null, p2: null, p5: null };
             }
 
-            // --- 1) Détection opportunités ---
-            if (lastPrices[symbol]) {
-                const oldPrice = lastPrices[symbol];
-                const change = ((price - oldPrice) / oldPrice) * 100;
-                const now = Date.now();
+            const hist = priceHistory[symbol];
 
-                if (!lastAlertTime[symbol] || now - lastAlertTime[symbol] > 10 * 60 * 1000) {
-                    if (change >= 0.1) {
-                        const row = new ActionRowBuilder().addComponents(
-                            new ButtonBuilder()
-                                .setCustomId(`miser_${symbol}_${price.toFixed(2)}`)
-                                .setLabel("Miser")
-                                .setStyle(ButtonStyle.Success),
-                            new ButtonBuilder()
-                                .setCustomId(`ignore_${symbol}_0`)
-                                .setLabel("Ignorer")
-                                .setStyle(ButtonStyle.Secondary)
-                        );
+            // Décalage des prix
+            hist.p5 = hist.p2;
+            hist.p2 = hist.p1;
+            hist.p1 = price;
 
-                        await adminUser.send({
-                            content: `💡 **${name}** a bougé de **${change.toFixed(2)}%**.`,
-                            components: [row]
-                        });
+            // On attend d'avoir 3 valeurs
+            if (hist.p1 && hist.p2 && hist.p5) {
+                const rising = hist.p1 > hist.p2 && hist.p2 > hist.p5;
 
-                        lastAlertTime[symbol] = now;
-                    }
-                }
-            }
-
-            // --- 2) Surveillance des positions (ALERTE ±3%) ---
-            if (positions[symbol]) {
-                const position = positions[symbol];
-                const entry = position.entry;
-                const perf = ((price - entry) / entry) * 100;
-
-                if (!position.alerted && (perf >= 3 || perf <= -3)) {
-                    const direction = perf >= 3 ? "augmenté" : "chuté";
-                    const emoji = perf >= 3 ? "📈" : "📉";
-
+                if (rising) {
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
-                            .setCustomId(`vendre_${symbol}_0`)
-                            .setLabel("Vendre")
-                            .setStyle(ButtonStyle.Danger),
+                            .setCustomId(`acheter_${symbol}_${price}`)
+                            .setLabel("Acheter")
+                            .setStyle(ButtonStyle.Success),
                         new ButtonBuilder()
                             .setCustomId(`ignore_${symbol}_0`)
-                            .setLabel("ignorer")
+                            .setLabel("Ignorer")
                             .setStyle(ButtonStyle.Secondary)
                     );
 
                     await adminUser.send({
-                        content: `${emoji} **${name}** a **${direction} de 3%** !`,
+                        content: `📈 **${name}** monte depuis 5 minutes ! (prix : ${price})`,
                         components: [row]
                     });
-
-                    position.alerted = true;
                 }
             }
 
-            lastPrices[symbol] = price;
             await new Promise(res => setTimeout(res, 300));
         }
     } catch (err) {
-        console.error("Erreur dans checkMarkets:", err);
+        console.error("Erreur checkMarkets:", err);
     }
 }
 
