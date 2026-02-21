@@ -106,18 +106,21 @@ client.once("ready", () => {
     });
 });
 
-// --- YAHOO FINANCE FETCH ---
+// --- YAHOO FINANCE FETCH (FIXÉ) ---
 async function getQuote(symbol) {
     try {
         const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-        const res = await axios.get(url);
+        const res = await axios.get(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0"
+            }
+        });
 
         const price = res.data.quoteResponse.result[0]?.regularMarketPrice;
+        return price || null;
 
-        if (!price) return null;
-        return price;
     } catch (err) {
-        console.log("Erreur Yahoo:", err.message);
+        console.log("Erreur Yahoo:", err.response?.status || err.message);
         return null;
     }
 }
@@ -293,4 +296,3 @@ setInterval(checkMarkets, 60_000);
 
 // --- LOGIN ---
 client.login(TOKEN);
-
