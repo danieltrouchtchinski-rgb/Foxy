@@ -16,7 +16,7 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 
-// --- 28 SYMBOLS ---
+// --- SYMBOLS ---
 const symbols = [
     "AAPL", "TSLA", "NVDA", "AMZN", "META", "MSFT",
     "GOOGL", "NFLX", "AMD", "INTC", "IBM", "ORCL",
@@ -57,6 +57,12 @@ const prettyNames = {
     "MA": "Mastercard"
 };
 
+// --- NOM → SYMBOLE (pour /prix) ---
+const nameToSymbol = {};
+for (const s of Object.keys(prettyNames)) {
+    nameToSymbol[prettyNames[s].toLowerCase()] = s;
+}
+
 // --- STOCKAGE DES PRIX ---
 const priceHistory = {}; 
 // priceHistory[symbol] = { p1, p2, p5 }
@@ -75,12 +81,24 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-// --- ENREGISTREMENT DE LA COMMANDE /positions ---
+// --- ENREGISTREMENT COMMANDES ---
 async function registerCommands() {
     const commands = [
         {
             name: "positions",
             description: "Affiche toutes les actions que tu as achetées."
+        },
+        {
+            name: "prix",
+            description: "Affiche le prix actuel d'une action.",
+            options: [
+                {
+                    name: "action",
+                    description: "Ex: apple, tesla, amazon...",
+                    type: 3,
+                    required: true
+                }
+            ]
         }
     ];
 
@@ -91,7 +109,7 @@ async function registerCommands() {
             Routes.applicationCommands(CLIENT_ID),
             { body: commands }
         );
-        console.log("Commande /positions enregistrée !");
+        console.log("Commandes enregistrées !");
     } catch (err) {
         console.error("Erreur enregistrement commandes :", err);
     }
@@ -103,11 +121,11 @@ client.once("ready", () => {
     registerCommands();
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✨ Bot mis à jour avec Yahoo Finance via RapidAPI !");
+        user.send("✨ Bot opérationnel avec RapidAPI !");
     }).catch(() => {});
 });
 
-// --- RAPIDAPI YAHOO FINANCE FETCH ---
+// --- RAPIDAPI YAHOO FINANCE ---
 async function getQuote(symbol) {
     try {
         const res = await axios.get(
@@ -120,8 +138,7 @@ async function getQuote(symbol) {
             }
         );
 
-        const price = res.data?.price?.regularMarketPrice;
-        return price || null;
+        return res.data?.price?.regularMarketPrice || null;
 
     } catch (err) {
         console.log("Erreur RapidAPI:", err.response?.status, err.response?.data);
@@ -129,21 +146,43 @@ async function getQuote(symbol) {
     }
 }
 
-// --- BOUTONS & COMMANDES ---
+// --- INTERACTIONS ---
 client.on("interactionCreate", async interaction => {
-    // Slash command
+
+    // --- SLASH COMMANDS ---
     if (interaction.isChatInputCommand()) {
+
+        // /prix
+        if (interaction.commandName === "prix") {
+            const actionName = interaction.options.getString("action").toLowerCase();
+            const symbol = nameToSymbol[actionName];
+
+            if (!symbol) {
+                return interaction.reply(`❌ Action inconnue : **${actionName}**`);
+            }
+
+            const price = await getQuote(symbol);
+            if (!price) {
+                return interaction.reply(`❌ Impossible de récupérer le prix de **${actionName}**`);
+            }
+
+            return interaction.reply(
+                `💹 Le prix actuel de **${prettyNames[symbol]}** (${symbol}) est : **${price}$**`
+            );
+        }
+
+        // /positions
         if (interaction.commandName === "positions") {
             return handlePositionsCommand(interaction);
         }
     }
 
-    // Boutons
+    // --- BOUTONS ---
     if (!interaction.isButton()) return;
 
     const [action, symbol, price] = interaction.customId.split("_");
 
-    // --- ACHETER ---
+    // ACHETER
     if (action === "acheter") {
         positions[symbol] = {
             entry: parseFloat(price),
@@ -156,7 +195,7 @@ client.on("interactionCreate", async interaction => {
         });
     }
 
-    // --- VENDRE ---
+    // VENDRE
     if (action === "vendre") {
         const pos = positions[symbol];
         if (!pos) {
@@ -169,37 +208,27 @@ client.on("interactionCreate", async interaction => {
         }
 
         const perf = ((current - pos.entry) / pos.entry) * 100;
-        const mise = 100;
-        const profit = (perf / 100) * mise;
+        const profit = (perf / 100) * 100;
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`ignore_${symbol}_0`)
-                .setLabel("Ignorer")
-                .setStyle(ButtonStyle.Secondary)
+        await interaction.reply(
+            `📊 **Bilan pour ${prettyNames[symbol]}**\n` +
+            `Entrée : **${pos.entry}**\n` +
+            `Actuel : **${current}**\n` +
+            `Perf : **${perf.toFixed(2)}%**\n` +
+            `💰 Résultat (mise 100€) : **${profit.toFixed(2)}€**`
         );
-
-        await interaction.reply({
-            content:
-                `📊 **Bilan pour ${prettyNames[symbol]}**\n` +
-                `📈 Entrée : **${pos.entry}**\n` +
-                `📉 Actuel : **${current}**\n` +
-                `📊 Perf : **${perf.toFixed(2)}%**\n` +
-                `💰 Résultat (mise 100€) : **${profit.toFixed(2)}€**`,
-            components: [row]
-        });
 
         delete positions[symbol];
     }
 
-    // --- IGNORER ---
+    // IGNORER
     if (action === "ignore") {
         await interaction.message.delete().catch(() => {});
         return interaction.reply({ content: "Message ignoré.", ephemeral: true });
     }
 });
 
-// --- COMMANDE /positions ---
+// --- /positions ---
 async function handlePositionsCommand(interaction) {
     if (Object.keys(positions).length === 0) {
         return interaction.reply("📭 Tu n'as aucune position ouverte.");
@@ -210,21 +239,21 @@ async function handlePositionsCommand(interaction) {
     for (const symbol of Object.keys(positions)) {
         const pos = positions[symbol];
         const current = await getQuote(symbol);
+
         if (!current) {
-            msg += `**${prettyNames[symbol]}** → impossible de récupérer le prix actuel.\n\n`;
+            msg += `**${prettyNames[symbol]}** → prix indisponible.\n\n`;
             continue;
         }
 
         const perf = ((current - pos.entry) / pos.entry) * 100;
-        const mise = 100;
-        const profit = (perf / 100) * mise;
+        const profit = (perf / 100) * 100;
 
         msg +=
-            `**${prettyNames[symbol]}**\n` +
+            `**${prettyNames[symbol]}** (${symbol})\n` +
             `Entrée : ${pos.entry}\n` +
             `Actuel : ${current}\n` +
             `Perf : ${perf.toFixed(2)}%\n` +
-            `Résultat (mise 100€) : ${profit.toFixed(2)}€\n\n`;
+            `Résultat : ${profit.toFixed(2)}€\n\n`;
     }
 
     return interaction.reply(msg);
@@ -252,9 +281,10 @@ async function checkMarkets() {
             hist.p2 = hist.p1;
             hist.p1 = price;
 
-            // --- 1) Détection tendance haussière ---
+            // TENDANCE HAUSSIÈRE
             if (hist.p1 && hist.p2 && hist.p5) {
                 if (hist.p1 > hist.p2 && hist.p2 > hist.p5) {
+
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId(`acheter_${symbol}_${price}`)
@@ -273,14 +303,14 @@ async function checkMarkets() {
                 }
             }
 
-            // --- 2) Surveillance des positions (±3%) ---
+            // ALERTES ±3%
             if (positions[symbol]) {
                 const pos = positions[symbol];
                 const perf = ((price - pos.entry) / pos.entry) * 100;
 
                 if (!pos.alerted && (perf >= 3 || perf <= -3)) {
-                    const direction = perf >= 3 ? "augmenté" : "chuté";
                     const emoji = perf >= 3 ? "📈" : "📉";
+                    const direction = perf >= 3 ? "augmenté" : "chuté";
 
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
