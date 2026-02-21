@@ -1,31 +1,28 @@
 const {
     Client,
     GatewayIntentBits,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
     Partials,
     REST,
-    Routes
+    Routes,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle
 } = require("discord.js");
 const axios = require("axios");
 
-// --- CONFIG ---
-const ADMIN_ID = process.env.ADMIN_ID;
+// ENV
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+const ADMIN_ID = process.env.ADMIN_ID;
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 
-// --- SYMBOLS ---
+// SYMBOLS
 const symbols = [
     "AAPL", "TSLA", "NVDA", "AMZN", "META", "MSFT",
-    "GOOGL", "NFLX", "AMD", "INTC", "IBM", "ORCL",
-    "UBER", "LYFT", "SHOP", "PYPL", "SQ", "BA",
-    "DIS", "NKE", "SBUX", "KO", "PEP", "XOM",
-    "CVX", "JPM", "V", "MA"
+    "GOOGL", "NFLX", "AMD", "INTC", "IBM", "ORCL"
 ];
 
-// --- NOMS HUMAINS ---
+// Noms humains
 const prettyNames = {
     "AAPL": "Apple",
     "TSLA": "Tesla",
@@ -38,40 +35,22 @@ const prettyNames = {
     "AMD": "AMD",
     "INTC": "Intel",
     "IBM": "IBM",
-    "ORCL": "Oracle",
-    "UBER": "Uber",
-    "LYFT": "Lyft",
-    "SHOP": "Shopify",
-    "PYPL": "PayPal",
-    "SQ": "Block",
-    "BA": "Boeing",
-    "DIS": "Disney",
-    "NKE": "Nike",
-    "SBUX": "Starbucks",
-    "KO": "Coca-Cola",
-    "PEP": "Pepsi",
-    "XOM": "ExxonMobil",
-    "CVX": "Chevron",
-    "JPM": "JP Morgan",
-    "V": "Visa",
-    "MA": "Mastercard"
+    "ORCL": "Oracle"
 };
 
-// --- NOM → SYMBOLE (pour /prix) ---
+// Nom → symbole
 const nameToSymbol = {};
 for (const s of Object.keys(prettyNames)) {
     nameToSymbol[prettyNames[s].toLowerCase()] = s;
 }
 
-// --- STOCKAGE DES PRIX ---
-const priceHistory = {}; 
-// priceHistory[symbol] = { p1, p2, p5 }
+// Historique prix
+const priceHistory = {}; // { p1, p2, p5 }
 
-// --- POSITIONS ---
-const positions = {}; 
-// positions[symbol] = { entry, alerted }
+// Positions
+const positions = {}; // { entry, alerted }
 
-// --- DISCORD CLIENT ---
+// Discord client
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -81,13 +60,9 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-// --- ENREGISTREMENT COMMANDES ---
+// Enregistrement commandes
 async function registerCommands() {
     const commands = [
-        {
-            name: "positions",
-            description: "Affiche toutes les actions que tu as achetées."
-        },
         {
             name: "prix",
             description: "Affiche le prix actuel d'une action.",
@@ -99,46 +74,37 @@ async function registerCommands() {
                     required: true
                 }
             ]
+        },
+        {
+            name: "positions",
+            description: "Affiche toutes les actions achetées."
         }
     ];
 
     const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-    try {
-        await rest.put(
-            Routes.applicationCommands(CLIENT_ID),
-            { body: commands }
-        );
-        console.log("Commandes enregistrées !");
-    } catch (err) {
-        console.error("Erreur enregistrement commandes :", err);
-    }
+    await rest.put(
+        Routes.applicationCommands(CLIENT_ID),
+        { body: commands }
+    );
+
+    console.log("Commandes enregistrées !");
 }
 
-// --- READY ---
-client.once("ready", () => {
-    console.log(`Bot connecté en tant que ${client.user.tag}`);
-    registerCommands();
-
-    client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✨ Bot opérationnel avec RapidAPI !");
-    }).catch(() => {});
-});
-
-// --- RAPIDAPI YAHOO FINANCE ---
+// Fonction RapidAPI
 async function getQuote(symbol) {
     try {
         const res = await axios.get(
-            `https://yahoo-finance15.p.rapidapi.com/api/yahoo/qu/quote/${symbol}`,
+            `https://yahoo-finance15.p.rapidapi.com/api/v1/markets/quote?ticker=${symbol}&type=STOCKS`,
             {
                 headers: {
-                    "X-RapidAPI-Key": RAPIDAPI_KEY,
-                    "X-RapidAPI-Host": "yahoo-finance15.p.rapidapi.com"
+                    "x-rapidapi-key": RAPIDAPI_KEY,
+                    "x-rapidapi-host": "yahoo-finance15.p.rapidapi.com"
                 }
             }
         );
 
-        return res.data?.price?.regularMarketPrice || null;
+        return res.data?.body?.regularMarketPrice || null;
 
     } catch (err) {
         console.log("Erreur RapidAPI:", err.response?.status, err.response?.data);
@@ -146,10 +112,16 @@ async function getQuote(symbol) {
     }
 }
 
-// --- INTERACTIONS ---
+// Ready
+client.once("ready", () => {
+    console.log(`Bot connecté en tant que ${client.user.tag}`);
+    registerCommands();
+});
+
+// Interactions
 client.on("interactionCreate", async interaction => {
 
-    // --- SLASH COMMANDS ---
+    // Slash commands
     if (interaction.isChatInputCommand()) {
 
         // /prix
@@ -162,6 +134,7 @@ client.on("interactionCreate", async interaction => {
             }
 
             const price = await getQuote(symbol);
+
             if (!price) {
                 return interaction.reply(`❌ Impossible de récupérer le prix de **${actionName}**`);
             }
@@ -173,16 +146,42 @@ client.on("interactionCreate", async interaction => {
 
         // /positions
         if (interaction.commandName === "positions") {
-            return handlePositionsCommand(interaction);
+            if (Object.keys(positions).length === 0) {
+                return interaction.reply("📭 Tu n'as aucune position ouverte.");
+            }
+
+            let msg = "📘 **Tes positions actuelles :**\n\n";
+
+            for (const symbol of Object.keys(positions)) {
+                const pos = positions[symbol];
+                const current = await getQuote(symbol);
+
+                if (!current) {
+                    msg += `**${prettyNames[symbol]}** → prix indisponible.\n\n`;
+                    continue;
+                }
+
+                const perf = ((current - pos.entry) / pos.entry) * 100;
+                const profit = (perf / 100) * 100;
+
+                msg +=
+                    `**${prettyNames[symbol]}** (${symbol})\n` +
+                    `Entrée : ${pos.entry}\n` +
+                    `Actuel : ${current}\n` +
+                    `Perf : ${perf.toFixed(2)}%\n` +
+                    `Résultat : ${profit.toFixed(2)}€\n\n`;
+            }
+
+            return interaction.reply(msg);
         }
     }
 
-    // --- BOUTONS ---
+    // Boutons
     if (!interaction.isButton()) return;
 
     const [action, symbol, price] = interaction.customId.split("_");
 
-    // ACHETER
+    // Acheter
     if (action === "acheter") {
         positions[symbol] = {
             entry: parseFloat(price),
@@ -195,7 +194,7 @@ client.on("interactionCreate", async interaction => {
         });
     }
 
-    // VENDRE
+    // Vendre
     if (action === "vendre") {
         const pos = positions[symbol];
         if (!pos) {
@@ -221,53 +220,20 @@ client.on("interactionCreate", async interaction => {
         delete positions[symbol];
     }
 
-    // IGNORER
+    // Ignorer
     if (action === "ignore") {
         await interaction.message.delete().catch(() => {});
         return interaction.reply({ content: "Message ignoré.", ephemeral: true });
     }
 });
 
-// --- /positions ---
-async function handlePositionsCommand(interaction) {
-    if (Object.keys(positions).length === 0) {
-        return interaction.reply("📭 Tu n'as aucune position ouverte.");
-    }
-
-    let msg = "📘 **Tes positions actuelles :**\n\n";
-
-    for (const symbol of Object.keys(positions)) {
-        const pos = positions[symbol];
-        const current = await getQuote(symbol);
-
-        if (!current) {
-            msg += `**${prettyNames[symbol]}** → prix indisponible.\n\n`;
-            continue;
-        }
-
-        const perf = ((current - pos.entry) / pos.entry) * 100;
-        const profit = (perf / 100) * 100;
-
-        msg +=
-            `**${prettyNames[symbol]}** (${symbol})\n` +
-            `Entrée : ${pos.entry}\n` +
-            `Actuel : ${current}\n` +
-            `Perf : ${perf.toFixed(2)}%\n` +
-            `Résultat : ${profit.toFixed(2)}€\n\n`;
-    }
-
-    return interaction.reply(msg);
-}
-
-// --- CHECK MARKETS ---
+// Analyse marché (désactivée pour éviter 429)
 async function checkMarkets() {
     try {
         const adminUser = await client.users.fetch(ADMIN_ID);
 
         for (const symbol of symbols) {
-            const name = prettyNames[symbol];
             const price = await getQuote(symbol);
-
             if (!price) continue;
 
             if (!priceHistory[symbol]) {
@@ -281,7 +247,7 @@ async function checkMarkets() {
             hist.p2 = hist.p1;
             hist.p1 = price;
 
-            // TENDANCE HAUSSIÈRE
+            // Tendance haussière
             if (hist.p1 && hist.p2 && hist.p5) {
                 if (hist.p1 > hist.p2 && hist.p2 > hist.p5) {
 
@@ -297,13 +263,13 @@ async function checkMarkets() {
                     );
 
                     await adminUser.send({
-                        content: `📈 **${name}** monte depuis 5 minutes ! (prix : ${price})`,
+                        content: `📈 **${prettyNames[symbol]}** monte depuis 5 minutes ! (prix : ${price})`,
                         components: [row]
                     });
                 }
             }
 
-            // ALERTES ±3%
+            // Alertes ±3%
             if (positions[symbol]) {
                 const pos = positions[symbol];
                 const perf = ((price - pos.entry) / pos.entry) * 100;
@@ -324,7 +290,7 @@ async function checkMarkets() {
                     );
 
                     await adminUser.send({
-                        content: `${emoji} **${name}** a **${direction} de 3%** !`,
+                        content: `${emoji} **${prettyNames[symbol]}** a **${direction} de 3%** !`,
                         components: [row]
                     });
 
@@ -339,7 +305,8 @@ async function checkMarkets() {
     }
 }
 
-setInterval(checkMarkets, 60_000);
+// ❌ Désactivé pour éviter 429 pendant les tests
+// setInterval(checkMarkets, 60_000);
 
-// --- LOGIN ---
+// Login
 client.login(TOKEN);
