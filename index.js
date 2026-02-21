@@ -11,10 +11,10 @@ const {
 const axios = require("axios");
 
 // --- CONFIG ---
-const ADMIN_ID = process.env.ADMIN_ID || "1238123426959462432";
+const ADMIN_ID = process.env.ADMIN_ID;
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const TWELVE_KEY = process.env.TWELVE_KEY;
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 
 // --- 28 SYMBOLS ---
 const symbols = [
@@ -103,26 +103,28 @@ client.once("ready", () => {
     registerCommands();
 
     client.users.fetch(ADMIN_ID).then(user => {
-        user.send("✨ Bot mis à jour avec Twelve Data !");
+        user.send("✨ Bot mis à jour avec Yahoo Finance via RapidAPI !");
     }).catch(() => {});
 });
 
-// --- TWELVE DATA FETCH ---
+// --- RAPIDAPI YAHOO FINANCE FETCH ---
 async function getQuote(symbol) {
     try {
-        const url = `https://api.twelvedata.com/price?symbol=${symbol}&apikey=${TWELVE_KEY}`;
-        const res = await axios.get(url);
+        const res = await axios.get(
+            `https://yahoo-finance15.p.rapidapi.com/api/yahoo/qu/quote/${symbol}`,
+            {
+                headers: {
+                    "X-RapidAPI-Key": RAPIDAPI_KEY,
+                    "X-RapidAPI-Host": "yahoo-finance15.p.rapidapi.com"
+                }
+            }
+        );
 
-        if (!res.data || !res.data.price) {
-            console.log(`Erreur TwelveData pour ${symbol}:`, res.data);
-            return null;
-        }
+        const price = res.data?.price?.regularMarketPrice;
+        return price || null;
 
-        const price = parseFloat(res.data.price);
-        if (isNaN(price)) return null;
-        return price;
     } catch (err) {
-        console.log(`Erreur TwelveData pour ${symbol}:`, err.response?.status || err.message);
+        console.log("Erreur RapidAPI:", err.response?.status, err.response?.data);
         return null;
     }
 }
@@ -250,7 +252,7 @@ async function checkMarkets() {
             hist.p2 = hist.p1;
             hist.p1 = price;
 
-            // --- 1) Détection tendance haussière 1min → 2min → 5min ---
+            // --- 1) Détection tendance haussière ---
             if (hist.p1 && hist.p2 && hist.p5) {
                 if (hist.p1 > hist.p2 && hist.p2 > hist.p5) {
                     const row = new ActionRowBuilder().addComponents(
